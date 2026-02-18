@@ -7,11 +7,13 @@ export default function Canvas() {
   const selectedImageIds = useBoardStore((state) => state.selectedImageIds);
   const addImage = useBoardStore((state) => state.addimage);
   const updateMultipleImagePositions = useBoardStore(
-    (state) => state.updateMultipleImagePositions
+    (state) => state.updateMultipleImagePositions,
   );
   const selectImages = useBoardStore((state) => state.selectImages);
   const clearSelection = useBoardStore((state) => state.clearSelection);
   const [openPanel, setOpenPanel] = useState(null);
+
+  const [isPanning, setIsPanning] = useState(false);
 
   const containerRef = useRef(null);
   const contentRef = useRef(null);
@@ -74,8 +76,10 @@ export default function Canvas() {
         img.onload = () => {
           const maxWidth = 200;
           const scaleImg = maxWidth / img.width;
-          const centerX = (window.innerWidth / 2 - offsetRef.current.x) / scaleRef.current;
-          const centerY = (window.innerHeight / 2 - offsetRef.current.y) / scaleRef.current;
+          const centerX =
+            (window.innerWidth / 2 - offsetRef.current.x) / scaleRef.current;
+          const centerY =
+            (window.innerHeight / 2 - offsetRef.current.y) / scaleRef.current;
 
           addImage({
             url: reader.result,
@@ -98,16 +102,22 @@ export default function Canvas() {
 
     dragStartRef.current = { x: e.clientX, y: e.clientY };
     const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
-    const mouseY = (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
+    const mouseX =
+      (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
+    const mouseY =
+      (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
 
     if (e.button === 0) {
       // Vérifier clic sur image
       let clickedImageId = null;
       for (let i = images.length - 1; i >= 0; i--) {
         const img = images[i];
-        if (mouseX >= img.x && mouseX <= img.x + img.width &&
-            mouseY >= img.y && mouseY <= img.y + img.height) {
+        if (
+          mouseX >= img.x &&
+          mouseX <= img.x + img.width &&
+          mouseY >= img.y &&
+          mouseY <= img.y + img.height
+        ) {
           clickedImageId = img.id;
           break;
         }
@@ -115,7 +125,8 @@ export default function Canvas() {
 
       if (clickedImageId) {
         // Drag images
-        if (!selectedImageIds.includes(clickedImageId)) selectImages([clickedImageId]);
+        if (!selectedImageIds.includes(clickedImageId))
+          selectImages([clickedImageId]);
         draggingRef.current.active = true;
         draggingRef.current.imageIds = selectedImageIds.includes(clickedImageId)
           ? [...selectedImageIds]
@@ -125,7 +136,8 @@ export default function Canvas() {
         draggingRef.current.prevPositions = {};
         draggingRef.current.imageIds.forEach((id) => {
           const img = images.find((i) => i.id === id);
-          if (img) draggingRef.current.prevPositions[id] = { x: img.x, y: img.y };
+          if (img)
+            draggingRef.current.prevPositions[id] = { x: img.x, y: img.y };
         });
       } else {
         // Boîte de sélection
@@ -141,6 +153,7 @@ export default function Canvas() {
     // Clic droit : panning
     if (e.button === 2) {
       panningRef.current.active = true;
+      setIsPanning(true);
       panningRef.current.startX = e.clientX;
       panningRef.current.startY = e.clientY;
       panningRef.current.prevOffsetX = offsetRef.current.x;
@@ -153,8 +166,10 @@ export default function Canvas() {
 
     // Boîte de sélection
     if (selectionBoxRef.current.active) {
-      const mouseX = (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
-      const mouseY = (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
+      const mouseX =
+        (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
+      const mouseY =
+        (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
       selectionBoxRef.current.currentX = mouseX;
       selectionBoxRef.current.currentY = mouseY;
 
@@ -163,15 +178,21 @@ export default function Canvas() {
       const maxX = Math.max(selectionBoxRef.current.startX, mouseX);
       const maxY = Math.max(selectionBoxRef.current.startY, mouseY);
 
-      setSelectionBox({ startX: minX, startY: minY, currentX: maxX, currentY: maxY });
+      setSelectionBox({
+        startX: minX,
+        startY: minY,
+        currentX: maxX,
+        currentY: maxY,
+      });
 
       // Sélection images
       const selectedIds = images
-        .filter((img) => 
-          img.x + img.width > minX &&
-          img.x < maxX &&
-          img.y + img.height > minY &&
-          img.y < maxY
+        .filter(
+          (img) =>
+            img.x + img.width > minX &&
+            img.x < maxX &&
+            img.y + img.height > minY &&
+            img.y < maxY,
         )
         .map((img) => img.id);
 
@@ -181,9 +202,15 @@ export default function Canvas() {
 
     // Drag images
     if (draggingRef.current.active) {
-      const deltaX = (e.clientX - draggingRef.current.startX) / scaleRef.current;
-      const deltaY = (e.clientY - draggingRef.current.startY) / scaleRef.current;
-      updateMultipleImagePositions(draggingRef.current.imageIds, deltaX, deltaY);
+      const deltaX =
+        (e.clientX - draggingRef.current.startX) / scaleRef.current;
+      const deltaY =
+        (e.clientY - draggingRef.current.startY) / scaleRef.current;
+      updateMultipleImagePositions(
+        draggingRef.current.imageIds,
+        deltaX,
+        deltaY,
+      );
       draggingRef.current.startX = e.clientX;
       draggingRef.current.startY = e.clientY;
       return;
@@ -200,6 +227,7 @@ export default function Canvas() {
 
   const handleMouseUp = () => {
     panningRef.current.active = false;
+    setIsPanning(false);
     draggingRef.current.active = false;
     selectionBoxRef.current.active = false;
     setSelectionBox(null);
@@ -208,19 +236,26 @@ export default function Canvas() {
   const handleCanvasClick = (e) => {
     const dragDistance = Math.hypot(
       e.clientX - dragStartRef.current.x,
-      e.clientY - dragStartRef.current.y
+      e.clientY - dragStartRef.current.y,
     );
     if (dragDistance > 5) return;
     if (e.target.closest(".toolbar")) return;
 
     // Si clic sur image, ne rien faire
     const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
-    const mouseY = (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
+    const mouseX =
+      (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
+    const mouseY =
+      (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
     for (let i = images.length - 1; i >= 0; i--) {
       const img = images[i];
-      if (mouseX >= img.x && mouseX <= img.x + img.width &&
-          mouseY >= img.y && mouseY <= img.y + img.height) return;
+      if (
+        mouseX >= img.x &&
+        mouseX <= img.x + img.width &&
+        mouseY >= img.y &&
+        mouseY <= img.y + img.height
+      )
+        return;
     }
 
     clearSelection();
@@ -232,13 +267,18 @@ export default function Canvas() {
     const handleWheel = (e) => {
       e.preventDefault();
       const zoomSpeed = 0.001;
-      const newScale = Math.min(Math.max(scaleRef.current - e.deltaY * zoomSpeed, 0.1), 4);
+      const newScale = Math.min(
+        Math.max(scaleRef.current - e.deltaY * zoomSpeed, 0.1),
+        4,
+      );
       const rect = containerRef.current.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
-      const offsetXNew = mouseX - ((mouseX - offsetRef.current.x) * newScale) / scaleRef.current;
-      const offsetYNew = mouseY - ((mouseY - offsetRef.current.y) * newScale) / scaleRef.current;
+      const offsetXNew =
+        mouseX - ((mouseX - offsetRef.current.x) * newScale) / scaleRef.current;
+      const offsetYNew =
+        mouseY - ((mouseY - offsetRef.current.y) * newScale) / scaleRef.current;
 
       setScale(newScale);
       setOffsetX(offsetXNew);
@@ -294,8 +334,10 @@ export default function Canvas() {
     e.stopPropagation();
 
     const rect = containerRef.current.getBoundingClientRect();
-    const dropX = (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
-    const dropY = (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
+    const dropX =
+      (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
+    const dropY =
+      (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
 
     // Traiter les fichiers
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
@@ -352,9 +394,7 @@ export default function Canvas() {
 
       <div
         ref={containerRef}
-        className={`flex-1 bg-gray-900 overflow-hidden ${
-          selectionBox ? "cursor-crosshair" : "cursor-grab active:cursor-grabbing"
-        }`}
+        className={`flex-1 bg-gray-900 overflow-hidden ${isPanning ? "cursor-grabbing" : "cursor-default"}`}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -414,7 +454,9 @@ export default function Canvas() {
                 alt=""
                 draggable="false"
                 className={`absolute w-full h-full pointer-events-auto cursor-grab active:cursor-grabbing ${
-                  selectedImageIds.includes(img.id) ? "ring-2 ring-blue-500" : ""
+                  selectedImageIds.includes(img.id)
+                    ? "ring-2 ring-blue-500"
+                    : ""
                 }`}
               />
             </div>
