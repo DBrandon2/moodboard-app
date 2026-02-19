@@ -4,6 +4,65 @@ import { v4 as uuidv4 } from "uuid";
 export const useBoardStore = create((set) => ({
   images: [],
   selectedImageIds: [],
+  history: [],
+  future: [],
+
+  saveHistory: () => {
+    set((state) => ({
+      history: [
+        ...state.history,
+        {
+          images: JSON.parse(JSON.stringify(state.images)),
+          selectedImageIds: [...state.selectedImageIds],
+        },
+      ],
+      future: [],
+    }));
+  },
+
+  undo: () => {
+    set((state) => {
+      if (state.history.length === 0) return state;
+
+      const historyClone = [...state.history];
+      const previousState = historyClone.pop();
+
+      return {
+        images: previousState.images,
+        selectedImageIds: previousState.selectedImageIds,
+        history: historyClone,
+        future: [
+          ...state.future,
+          {
+            images: JSON.parse(JSON.stringify(state.images)),
+            selectedImageIds: [...state.selectedImageIds],
+          },
+        ],
+      };
+    });
+  },
+
+  redo: () => {
+    set((state) => {
+      if (state.future.length === 0) return state;
+
+      const futureClone = [...state.future];
+      const nextState = futureClone.pop();
+
+      return {
+        images: nextState.images,
+        selectedImageIds: nextState.selectedImageIds,
+        history: [
+          ...state.history,
+          {
+            images: JSON.parse(JSON.stringify(state.images)),
+            selectedImageIds: [...state.selectedImageIds],
+          },
+        ],
+        future: futureClone,
+      };
+    });
+  },
 
   addimage: (newImage) => {
     set((state) => ({
@@ -11,9 +70,11 @@ export const useBoardStore = create((set) => ({
         ...state.images,
         {
           id: uuidv4(),
+          rotation: 0,
           ...newImage,
         },
       ],
+      future: [],
     }));
   },
 
@@ -22,6 +83,7 @@ export const useBoardStore = create((set) => ({
       images: state.images.map((img) =>
         img.id === imageId ? { ...img, x, y } : img,
       ),
+      future: [],
     }));
   },
 
@@ -32,6 +94,7 @@ export const useBoardStore = create((set) => ({
           ? { ...img, x: img.x + deltaX, y: img.y + deltaY }
           : img,
       ),
+      future: [],
     }));
   },
 
@@ -52,5 +115,32 @@ export const useBoardStore = create((set) => ({
 
   clearSelection: () => {
     set({ selectedImageIds: [] });
+  },
+
+  updateImageDimensions: (imageId, width, height) => {
+    set((state) => ({
+      images: state.images.map((img) =>
+        img.id === imageId ? { ...img, width, height } : img,
+      ),
+      future: [],
+    }));
+  },
+
+  updateImagePositionAndDimensions: (imageId, x, y, width, height) => {
+    set((state) => ({
+      images: state.images.map((img) =>
+        img.id === imageId ? { ...img, x, y, width, height } : img,
+      ),
+      future: [],
+    }));
+  },
+
+  updateImageRotation: (imageId, rotation) => {
+    set((state) => ({
+      images: state.images.map((img) =>
+        img.id === imageId ? { ...img, rotation } : img,
+      ),
+      future: [],
+    }));
   },
 }));
