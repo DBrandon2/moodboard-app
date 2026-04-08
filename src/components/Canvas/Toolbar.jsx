@@ -169,11 +169,20 @@ export default function Toolbar({
 
   return (
     <div
-      className={`flex items-center justify-center gap-2 sm:gap-4 absolute z-[2000] bg-gray-800/80 toolbar touch-none border-gray-700 ${
-        isMobile
-          ? "w-full h-16 flex-row py-2 border-t bottom-0 left-0"
-          : "w-16 h-full flex-col py-4 border-r top-0 left-0"
-      }`}
+      className="flex items-center justify-center gap-2 sm:gap-4 bg-gray-800/80 toolbar touch-none border-gray-700"
+      style={{
+        position: "absolute",
+        bottom: isMobile ? 0 : "auto",
+        top: isMobile ? "auto" : 0,
+        left: 0,
+        zIndex: 2000,
+        width: isMobile ? "100%" : "4rem",
+        height: isMobile ? "4rem" : "100%",
+        flexDirection: isMobile ? "row" : "column",
+        padding: isMobile ? "0.5rem" : "1rem",
+        borderTop: isMobile ? "1px solid #374151" : "none",
+        borderRight: isMobile ? "none" : "1px solid #374151",
+      }}
     >
       {/* Bouton Recentrer */}
       <button

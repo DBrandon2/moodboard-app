@@ -10,7 +10,7 @@ export default function Canvas({
   setOffsetY,
   scale,
   setScale,
-  className = "",
+  isMobile = false,
 }) {
   const images = useBoardStore((state) => state.images);
   const selectedImageIds = useBoardStore((state) => state.selectedImageIds);
@@ -1198,7 +1198,15 @@ export default function Canvas({
   return (
     <div
       ref={containerRef}
-      className={`${className} bg-gray-900 overflow-hidden relative ${isPanning ? "cursor-grabbing" : "cursor-default"}`}
+      className="w-full h-full bg-gray-900 overflow-hidden relative"
+      style={{
+        touchAction: "none",
+        WebkitUserSelect: "none",
+        userSelect: "none",
+        cursor: isPanning ? "grabbing" : "default",
+        marginBottom: isMobile ? "4rem" : "0",
+        marginLeft: isMobile ? "0" : "4rem",
+      }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -1208,11 +1216,6 @@ export default function Canvas({
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      style={{
-        touchAction: "none",
-        WebkitUserSelect: "none",
-        userSelect: "none",
-      }}
     >
       {/* Grille */}
       <div
