@@ -16,7 +16,7 @@ function App() {
   };
 
   return (
-    <div className="w-screen min-h-dvh select-none relative">
+    <div className="w-screen h-screen select-none relative">
       <Toolbar
         openPanel={openPanel}
         setOpenPanel={setOpenPanel}

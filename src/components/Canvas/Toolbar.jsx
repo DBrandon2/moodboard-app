@@ -157,14 +157,14 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
   }, [addMenuOpen]);
 
   return (
-    <div className="w-full h-16 flex flex-row items-center justify-center py-2 gap-1 sm:gap-2 md:gap-4 border-t border-gray-700 absolute bottom-0 left-0 z-[2000] bg-gray-800/80 toolbar md:w-16 md:h-full md:flex-col md:items-center md:py-4 md:border-r md:border-t-0 md:top-0 md:bottom-auto touch-none">
+    <div className="w-full h-16 flex flex-row items-center justify-center py-2 gap-2 sm:gap-4 border-t border-gray-700 absolute bottom-0 left-0 z-[2000] bg-gray-800/80 toolbar md:w-16 md:h-full md:flex-col md:items-center md:py-4 md:border-r md:border-t-0 md:top-0 md:bottom-auto touch-none">
       {/* Bouton Recentrer */}
       <button
         onClick={(e) => {
           e.stopPropagation();
           onRecenter();
         }}
-        className="text-white text-xl sm:text-2xl md:text-3xl p-2 sm:p-2.5 md:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600 min-h-12 min-w-12 flex items-center justify-center"
+        className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600"
         title="Recentrer"
       >
         <FiCompass />
@@ -174,7 +174,7 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
       <button
         ref={addButtonRef}
         onClick={handleAddMenuToggle}
-        className="text-white text-xl sm:text-2xl md:text-3xl p-2 sm:p-2.5 md:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600 min-h-12 min-w-12 flex items-center justify-center"
+        className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600"
         title="Ajouter une image"
       >
         <FiPlus />
@@ -183,7 +183,7 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
       {/* Bouton Télécharger données */}
       <button
         onClick={handleDownloadData}
-        className="text-white text-xl sm:text-2xl md:text-3xl p-2 sm:p-2.5 md:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600 min-h-12 min-w-12 flex items-center justify-center"
+        className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600"
         title="Télécharger la sauvegarde"
       >
         <FiDownload />
@@ -192,7 +192,7 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
       {/* Bouton Importer données */}
       <button
         onClick={() => importInputRef.current?.click()}
-        className="text-white text-xl sm:text-2xl md:text-3xl p-2 sm:p-2.5 md:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600 min-h-12 min-w-12 flex items-center justify-center"
+        className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600"
         title="Importer une sauvegarde"
       >
         <FiUploadCloud />
@@ -209,7 +209,7 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
       <div className="relative">
         <button
           onClick={() => setShowClearConfirm(true)}
-          className="text-white text-xl sm:text-2xl md:text-3xl p-2 sm:p-2.5 md:p-3 hover:bg-red-700 rounded transition-colors active:bg-red-800 disabled:opacity-50 disabled:cursor-not-allowed min-h-12 min-w-12 flex items-center justify-center"
+          className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-red-700 rounded transition-colors active:bg-red-800"
           title="Effacer le moodboard"
           disabled={images.length === 0}
         >
@@ -218,7 +218,7 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
 
         {/* Confirmation modal */}
         {showClearConfirm && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-gray-800 rounded-lg p-6 max-w-sm w-full border border-gray-700">
               <h3 className="text-white text-lg font-semibold mb-2">
                 Êtes-vous sûr ?

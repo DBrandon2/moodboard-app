@@ -49,8 +49,8 @@ export default function Canvas({
   const longPressTimeoutRef = useRef(null);
   const initialPinchDistanceRef = useRef(0);
   const initialPinchScaleRef = useRef(1);
-  const twoFingerPanStartRef = useRef({ x: 0, y: 0, offsetX: 0, offsetY: 0 });
-  const isPinchingRef = useRef(false);
+  const initialTwoFingerMidpointRef = useRef({ x: 0, y: 0 });
+  const initialTwoFingerOffsetRef = useRef({ x: 0, y: 0 });
 
   const closeContextMenu = () => {
     setContextMenu({ visible: false, x: 0, y: 0, imageId: null });
@@ -334,7 +334,6 @@ export default function Canvas({
     if (e.target.closest(".toolbar")) return;
 
     touchesRef.current = Array.from(e.touches);
-    isPinchingRef.current = false;
 
     if (e.touches.length === 1) {
       // Single touch - start long press timer
@@ -381,18 +380,17 @@ export default function Canvas({
         preventDefault: () => e.preventDefault(),
       });
     } else if (e.touches.length === 2) {
-      // Two fingers - prepare for pinch or panning
+      // Two fingers - prepare for combined pinch + pan
       clearTimeout(longPressTimeoutRef.current);
       initialPinchDistanceRef.current = getDistance(e.touches[0], e.touches[1]);
       initialPinchScaleRef.current = scaleRef.current;
 
-      // Initialize two-finger pan
+      // Stocker la position initiale du midpoint et l'offset du canvas
       const midpoint = getMidpoint(e.touches[0], e.touches[1]);
-      twoFingerPanStartRef.current = {
-        x: midpoint.x,
-        y: midpoint.y,
-        offsetX: offsetRef.current.x,
-        offsetY: offsetRef.current.y,
+      initialTwoFingerMidpointRef.current = { x: midpoint.x, y: midpoint.y };
+      initialTwoFingerOffsetRef.current = {
+        x: offsetRef.current.x,
+        y: offsetRef.current.y,
       };
     }
   };
@@ -411,47 +409,42 @@ export default function Canvas({
         touches: e.touches,
       });
     } else if (e.touches.length === 2) {
-      // Two fingers - distinguish between pinch and pan
+      // Two fingers - PINCH et PAN EN MÊME TEMPS (comme Procreate)
+      clearTimeout(longPressTimeoutRef.current);
+      
+      // 1. PINCH ZOOM
       const currentDistance = getDistance(e.touches[0], e.touches[1]);
       const distanceRatio = currentDistance / initialPinchDistanceRef.current;
+      const newScale = Math.min(
+        Math.max(initialPinchScaleRef.current * distanceRatio, 0.1),
+        4,
+      );
 
-      // Déterminer si c'est un pinch (changement > 3%)
-      const isPinch = Math.abs(distanceRatio - 1) > 0.03;
+      // 2. PAN - mouvement du midpoint
+      const currentMidpoint = getMidpoint(e.touches[0], e.touches[1]);
+      const panDeltaX = currentMidpoint.x - initialTwoFingerMidpointRef.current.x;
+      const panDeltaY = currentMidpoint.y - initialTwoFingerMidpointRef.current.y;
 
-      if (isPinch) {
-        // PINCH ZOOM - zoomer et ignorer le pan
-        isPinchingRef.current = true;
-        clearTimeout(longPressTimeoutRef.current);
-        
-        const newScale = Math.min(
-          Math.max(initialPinchScaleRef.current * distanceRatio, 0.1),
-          4,
-        );
+      // 3. APPLIQUER LES DEUX TRANSFORMATIONS EN MÊME TEMPS
+      // Le zoom se fait au midpoint INITIAL
+      const rect = containerRef.current.getBoundingClientRect();
+      const zoomPointX = initialTwoFingerMidpointRef.current.x - rect.left;
+      const zoomPointY = initialTwoFingerMidpointRef.current.y - rect.top;
 
-        const midpoint = getMidpoint(e.touches[0], e.touches[1]);
-        const rect = containerRef.current.getBoundingClientRect();
-        const mouseX = midpoint.x - rect.left;
-        const mouseY = midpoint.y - rect.top;
+      // Appliquer le zoom au point correct
+      const offsetXFromZoom =
+        zoomPointX -
+        ((zoomPointX - initialTwoFingerOffsetRef.current.x) * newScale) /
+          initialPinchScaleRef.current;
+      const offsetYFromZoom =
+        zoomPointY -
+        ((zoomPointY - initialTwoFingerOffsetRef.current.y) * newScale) /
+          initialPinchScaleRef.current;
 
-        const offsetXNew =
-          mouseX -
-          ((mouseX - offsetRef.current.x) * newScale) / scaleRef.current;
-        const offsetYNew =
-          mouseY -
-          ((mouseY - offsetRef.current.y) * newScale) / scaleRef.current;
-
-        setScale(newScale);
-        setOffsetX(offsetXNew);
-        setOffsetY(offsetYNew);
-      } else if (!isPinchingRef.current) {
-        // PAN UNIQUEMENT - deux doigts qui se déplacent sans pinch
-        const midpoint = getMidpoint(e.touches[0], e.touches[1]);
-        const dx = midpoint.x - twoFingerPanStartRef.current.x;
-        const dy = midpoint.y - twoFingerPanStartRef.current.y;
-        
-        setOffsetX(twoFingerPanStartRef.current.offsetX + dx);
-        setOffsetY(twoFingerPanStartRef.current.offsetY + dy);
-      }
+      // Combiner zoom + pan
+      setScale(newScale);
+      setOffsetX(offsetXFromZoom + panDeltaX);
+      setOffsetY(offsetYFromZoom + panDeltaY);
     }
   };
 
@@ -459,12 +452,14 @@ export default function Canvas({
     if (e.touches.length === 0) {
       // All touches released
       clearTimeout(longPressTimeoutRef.current);
-      draggingRef.current.active = false;
-      isPinchingRef.current = false;
+      panningRef.current.active = false;
+      setIsPanning(false);
+      touchesRef.current = [];
     } else if (e.touches.length === 1) {
-      // One finger left - reset pinch
-      isPinchingRef.current = false;
+      // One touch remains - treat as new touch
       initialPinchDistanceRef.current = 0;
+      panningRef.current.active = false;
+      setIsPanning(false);
     }
 
     handleMouseUp();
