@@ -12,7 +12,7 @@ export default function Debug() {
   useEffect(() => {
     // Check toolbar element and its styles
     const toolbar = document.querySelector(".toolbar");
-    
+
     if (toolbar) {
       const styles = window.getComputedStyle(toolbar);
       setToolbarInfo({
@@ -55,12 +55,20 @@ export default function Debug() {
         overflowY: "auto",
       }}
     >
-      <div style={{ fontWeight: "bold", marginBottom: "0.8rem", fontSize: "13px" }}>
+      <div
+        style={{ fontWeight: "bold", marginBottom: "0.8rem", fontSize: "13px" }}
+      >
         📊 DEBUG INFO
       </div>
 
       {/* Window Size */}
-      <div style={{ marginBottom: "0.8rem", paddingBottom: "0.8rem", borderBottom: "1px solid #0f0" }}>
+      <div
+        style={{
+          marginBottom: "0.8rem",
+          paddingBottom: "0.8rem",
+          borderBottom: "1px solid #0f0",
+        }}
+      >
         <div style={{ fontWeight: "bold", color: "#0ff" }}>Window Size:</div>
         <div>Width: {windowSize.width}px</div>
         <div>Height: {windowSize.height}px</div>
@@ -80,7 +88,9 @@ export default function Debug() {
 
       {/* Toolbar Info */}
       <div style={{ marginBottom: "0.5rem" }}>
-        <div style={{ fontWeight: "bold", color: "#0ff" }}>Toolbar Element:</div>
+        <div style={{ fontWeight: "bold", color: "#0ff" }}>
+          Toolbar Element:
+        </div>
         {toolbarInfo ? (
           <>
             <div style={{ color: toolbarInfo.exists ? "#0f0" : "#f00" }}>
@@ -90,7 +100,9 @@ export default function Debug() {
               <>
                 <div style={{ marginTop: "0.5rem", fontSize: "10px" }}>
                   <div>Children: {toolbarInfo.childrenCount}</div>
-                  <div style={{ marginTop: "0.3rem", color: "#0ff" }}>Computed Styles:</div>
+                  <div style={{ marginTop: "0.3rem", color: "#0ff" }}>
+                    Computed Styles:
+                  </div>
                   <div>display: {toolbarInfo.display}</div>
                   <div>position: {toolbarInfo.position}</div>
                   <div>bottom: {toolbarInfo.bottom}</div>
@@ -101,20 +113,28 @@ export default function Debug() {
                   <div>visibility: {toolbarInfo.visibility}</div>
                   <div>opacity: {toolbarInfo.opacity}</div>
                   <div>zIndex: {toolbarInfo.zIndex}</div>
-                  <div style={{
-                    backgroundColor: toolbarInfo.backgroundColor,
-                    padding: "0.2rem",
-                    marginTop: "0.3rem",
-                    borderRadius: "2px",
-                    color: "#fff",
-                    fontSize: "9px"
-                  }}>
+                  <div
+                    style={{
+                      backgroundColor: toolbarInfo.backgroundColor,
+                      padding: "0.2rem",
+                      marginTop: "0.3rem",
+                      borderRadius: "2px",
+                      color: "#fff",
+                      fontSize: "9px",
+                    }}
+                  >
                     bgColor: {toolbarInfo.backgroundColor}
                   </div>
                 </div>
 
                 {/* Auto-detect issues */}
-                <div style={{ marginTop: "0.8rem", color: "#ff0", fontSize: "9px" }}>
+                <div
+                  style={{
+                    marginTop: "0.8rem",
+                    color: "#ff0",
+                    fontSize: "9px",
+                  }}
+                >
                   {toolbarInfo.display === "none" && (
                     <div>⚠️ display: none - Element hidden!</div>
                   )}
@@ -124,9 +144,10 @@ export default function Debug() {
                   {toolbarInfo.opacity === "0" && (
                     <div>⚠️ opacity: 0 - Transparent!</div>
                   )}
-                  {toolbarInfo.bottom === "auto" && toolbarInfo.top !== "auto" && (
-                    <div>⚠️ bottom: auto (top mode) - Check mobile flag!</div>
-                  )}
+                  {toolbarInfo.bottom === "auto" &&
+                    toolbarInfo.top !== "auto" && (
+                      <div>⚠️ bottom: auto (top mode) - Check mobile flag!</div>
+                    )}
                   {toolbarInfo.height === "100%" && (
                     <div>⚠️ height: 100% (full) - Desktop mode active?</div>
                   )}

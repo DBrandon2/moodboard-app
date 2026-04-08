@@ -1,35 +1,32 @@
 @import "tailwindcss";
 
-/* Force mobile layout on touch devices (iPad, etc) */
-/* This is a FALLBACK for when Media Queries don't work as expected on Safari iPad */
-@media (pointer: coarse) {
-  /* Force navbar to bottom even if other logic says desktop */
+/* Force mobile layout on touch devices (iPad, etc) ONLY on small screens */
+/* Combine pointer: coarse with max-width to avoid applying on desktop touchscreens */
+@media (pointer: coarse) and (max-width: 767px) {
+  /* Force navbar to bottom only on small touch devices */
   .toolbar {
-    position: absolute !important;
+    position: fixed !important;
     bottom: 0 !important;
     top: auto !important;
     left: 0 !important;
+    right: 0 !important;
     width: 100% !important;
     height: 4rem !important;
     flex-direction: row !important;
     border-top: 1px solid #374151 !important;
     border-right: none !important;
-  }
-  
-  /* Canvas should have bottom margin for navbar */
-  #root > div:last-child {
-    margin-bottom: 4rem !important;
-    margin-left: 0 !important;
+    z-index: 2000 !important;
   }
 }
 
-html, body, #root {
+html,
+body,
+#root {
   width: 100%;
   height: 100%;
   margin: 0;
   padding: 0;
   overflow: hidden;
-  
 
   color-scheme: light dark;
   color: rgba(255, 255, 255, 0.87);

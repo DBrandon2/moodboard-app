@@ -1204,7 +1204,7 @@ export default function Canvas({
         WebkitUserSelect: "none",
         userSelect: "none",
         cursor: isPanning ? "grabbing" : "default",
-        marginBottom: isMobile ? "4rem" : "0",
+        marginBottom: "0",
         marginLeft: isMobile ? "0" : "4rem",
       }}
       onMouseDown={handleMouseDown}

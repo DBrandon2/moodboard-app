@@ -1,7 +1,6 @@
 import "./App.css";
 import Canvas from "./components/Canvas/Canvas";
 import Toolbar from "./components/Canvas/Toolbar";
-import Debug from "./components/Debug";
 import { useState } from "react";
 import { useWindowSize } from "./hooks/useWindowSize";
 
@@ -19,7 +18,14 @@ function App() {
   };
 
   return (
-    <div className="w-screen h-screen select-none relative">
+    <div
+      className="w-screen h-screen select-none relative"
+      style={{
+        paddingBottom: windowSize.isMobile
+          ? "max(4rem, calc(4rem + env(safe-area-inset-bottom)))"
+          : "0",
+      }}
+    >
       <Toolbar
         openPanel={openPanel}
         setOpenPanel={setOpenPanel}
@@ -37,8 +43,6 @@ function App() {
         scale={scale}
         setScale={setScale}
       />
-      {/* DEBUG Component - Remove in production */}
-      <Debug />
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
  * Hook pour tracker la taille de la fenêtre en temps réel
  * Optimisé pour détecter les changements de taille (splitscreen iPad, etc.)
  * Inclut debouncing et matchMedia fallback pour iOS
- * 
+ *
  * Recherche: Safari/iPad fire resize events with 100-200ms delay
  * Solution: Debouncing + matchMedia listener for faster detection
  */
@@ -29,15 +29,7 @@ export const useWindowSize = () => {
         const width = window.innerWidth;
         const height = window.innerHeight;
         const isMobileState = width < 768;
-        
-        // DEBUG: Log resize events
-        console.log('[useWindowSize] Resize detected:', {
-          width,
-          height,
-          isMobile: isMobileState,
-          timestamp: new Date().toISOString(),
-        });
-        
+
         setWindowSize({
           width,
           height,
@@ -52,21 +44,13 @@ export const useWindowSize = () => {
     // CRITICAL: Some iOS Safari versions don't trigger resize on split screen
     const mediaQuery768 = window.matchMedia("(max-width: 767px)");
     const mediaQueryCoarse = window.matchMedia("(pointer: coarse)"); // Touch device fallback
-    
+
     const handleMediaChange = (e) => {
-      const isMobileState = e.matches;
-      
-      // DEBUG: Log media query changes
-      console.log('[useWindowSize] Media query changed:', {
-        query: e.media,
-        matches: e.matches,
-        width: window.innerWidth,
-        isMobile: isMobileState,
-        timestamp: new Date().toISOString(),
-      });
-      
+      // Always use innerWidth as source of truth - don't rely on e.matches for coarse
+      const isMobileState = window.innerWidth < 768;
+
       // Force update when media query state changes
-      setWindowSize(prev => ({
+      setWindowSize((prev) => ({
         ...prev,
         isMobile: isMobileState,
         width: window.innerWidth,
@@ -90,14 +74,10 @@ export const useWindowSize = () => {
 
     // Initial state update in case hook is added after mount
     handleResize();
-    
+
     // Also trigger immediate check of media queries on mount
     const initialCheck = () => {
       const isMobile = mediaQuery768.matches;
-      console.log('[useWindowSize] Initial media query check:', {
-        isMobile,
-        width: window.innerWidth,
-      });
       setWindowSize({
         width: window.innerWidth,
         height: window.innerHeight,
@@ -109,14 +89,14 @@ export const useWindowSize = () => {
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       window.removeEventListener("resize", handleResize);
-      
+
       // Cleanup media query listeners
       if (mediaQuery768.removeListener) {
         mediaQuery768.removeListener(handleMediaChange);
       } else {
         mediaQuery768.removeEventListener("change", handleMediaChange);
       }
-      
+
       if (mediaQueryCoarse.removeListener) {
         mediaQueryCoarse.removeListener(handleMediaChange);
       } else {
