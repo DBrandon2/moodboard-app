@@ -1,15 +1,20 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useBoardStore } from "../../store/boardStore";
-import { FiCompass, FiPlus, FiLink, FiUpload } from "react-icons/fi";
+import { FiCompass, FiPlus, FiLink, FiUpload, FiTrash2, FiDownload, FiUploadCloud } from "react-icons/fi";
 
 export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
   const [url, setUrl] = useState("");
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ left: 0, top: 0 });
   const [isMobile, setIsMobile] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const fileInputRef = useRef(null);
+  const importInputRef = useRef(null);
   const addButtonRef = useRef(null);
   const addImage = useBoardStore((state) => state.addimage);
+  const clearStorage = useBoardStore((state) => state.clearStorage);
+  const loadFromImport = useBoardStore((state) => state.loadFromImport);
+  const images = useBoardStore((state) => state.images);
 
   // Détecter si mobile
   useEffect(() => {
@@ -60,6 +65,48 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
   const handleKeyDown = (e) => {
     if (e.key === "Enter") handleAddImage();
   };
+
+  const handleClearStorage = () => {
+    clearStorage();
+    setShowClearConfirm(false);
+  };
+
+  const handleDownloadData = () => {
+    const storageKey = "moodboard_state";
+    const stored = localStorage.getItem(storageKey);
+    if (!stored) {
+      alert("Aucune donnée à télécharger");
+      return;
+    }
+    
+    const dataStr = JSON.stringify(JSON.parse(stored), null, 2);
+    const element = document.createElement("a");
+    element.setAttribute("href", "data:text/json;charset=utf-8," + encodeURIComponent(dataStr));
+    element.setAttribute("download", `moodboard_backup_${new Date().toISOString().split('T')[0]}.json`);
+    element.style.display = "none";
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+  };
+
+  const handleImportFile = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const importedData = JSON.parse(event.target.result);
+        loadFromImport(importedData);
+        alert("✓ Moodboard importé avec succès !");
+      } catch (error) {
+        alert(`Erreur lors de l'import: ${error.message}`);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
 
   const handleAddMenuToggle = (e) => {
     e.stopPropagation();
@@ -119,6 +166,71 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
       >
         <FiPlus />
       </button>
+
+      {/* Bouton Télécharger données */}
+      <button
+        onClick={handleDownloadData}
+        className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600"
+        title="Télécharger la sauvegarde"
+      >
+        <FiDownload />
+      </button>
+
+      {/* Bouton Importer données */}
+      <button
+        onClick={() => importInputRef.current?.click()}
+        className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600"
+        title="Importer une sauvegarde"
+      >
+        <FiUploadCloud />
+      </button>
+      <input
+        type="file"
+        ref={importInputRef}
+        className="hidden"
+        accept=".json"
+        onChange={handleImportFile}
+      />
+
+      {/* Bouton Effacer données */}
+      <div className="relative">
+        <button
+          onClick={() => setShowClearConfirm(true)}
+          className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-red-700 rounded transition-colors active:bg-red-800"
+          title="Effacer le moodboard"
+          disabled={images.length === 0}
+        >
+          <FiTrash2 />
+        </button>
+
+        {/* Confirmation modal */}
+        {showClearConfirm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-gray-800 rounded-lg p-6 max-w-sm w-full border border-gray-700">
+              <h3 className="text-white text-lg font-semibold mb-2">
+                Êtes-vous sûr ?
+              </h3>
+              <p className="text-gray-300 mb-6">
+                Cette action supprimera toutes les images et la session sera réinitialisée.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowClearConfirm(false)}
+                  className="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleClearStorage}
+                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors font-semibold"
+                >
+                  Effacer
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Menu d'ajout animé */}
       {addMenuOpen && (

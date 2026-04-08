@@ -473,10 +473,6 @@ export default function Canvas({
     // À zoom 2x → handles 0.5x (6px) car déjà gros visuellement
     let handleSize = baseHandleSize / currentScale;
 
-    // Limiter entre min et max pour plus de confort
-    handleSize = Math.max(handleSize, 8); // Min 8px (même très zoomé)
-    handleSize = Math.min(handleSize, 24); // Max 24px (même très dézoomé)
-
     // Mobile : augmenter la base de 50% pour meilleur tactile
     if (window.innerWidth < 768) {
       handleSize = handleSize * 1.5;
