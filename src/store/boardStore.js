@@ -29,7 +29,7 @@ const saveToStorage = (images, selectedImageIds) => {
         images,
         selectedImageIds,
         timestamp: new Date().toISOString(),
-      })
+      }),
     );
   } catch (error) {
     console.error("Erreur lors de la sauvegarde dans localStorage:", error);
@@ -207,7 +207,9 @@ export const useBoardStore = create((set) => ({
 
   removeImages: (imageIds) => {
     set((state) => {
-      const newImages = state.images.filter((img) => !imageIds.includes(img.id));
+      const newImages = state.images.filter(
+        (img) => !imageIds.includes(img.id),
+      );
       const newSelectedIds = state.selectedImageIds.filter(
         (id) => !imageIds.includes(id),
       );

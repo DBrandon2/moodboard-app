@@ -49,6 +49,8 @@ export default function Canvas({
   const longPressTimeoutRef = useRef(null);
   const initialPinchDistanceRef = useRef(0);
   const initialPinchScaleRef = useRef(1);
+  const twoFingerPanStartRef = useRef({ x: 0, y: 0, offsetX: 0, offsetY: 0 });
+  const isPinchingRef = useRef(false);
 
   const closeContextMenu = () => {
     setContextMenu({ visible: false, x: 0, y: 0, imageId: null });
@@ -332,6 +334,7 @@ export default function Canvas({
     if (e.target.closest(".toolbar")) return;
 
     touchesRef.current = Array.from(e.touches);
+    isPinchingRef.current = false;
 
     if (e.touches.length === 1) {
       // Single touch - start long press timer
@@ -383,17 +386,19 @@ export default function Canvas({
       initialPinchDistanceRef.current = getDistance(e.touches[0], e.touches[1]);
       initialPinchScaleRef.current = scaleRef.current;
 
-      // Start two-finger pan
-      panningRef.current.active = true;
-      setIsPanning(true);
-      panningRef.current.startX = getMidpoint(e.touches[0], e.touches[1]).x;
-      panningRef.current.startY = getMidpoint(e.touches[0], e.touches[1]).y;
-      panningRef.current.prevOffsetX = offsetRef.current.x;
-      panningRef.current.prevOffsetY = offsetRef.current.y;
+      // Initialize two-finger pan
+      const midpoint = getMidpoint(e.touches[0], e.touches[1]);
+      twoFingerPanStartRef.current = {
+        x: midpoint.x,
+        y: midpoint.y,
+        offsetX: offsetRef.current.x,
+        offsetY: offsetRef.current.y,
+      };
     }
   };
 
   const handleTouchMove = (e) => {
+    e.preventDefault();
     touchesRef.current = Array.from(e.touches);
 
     if (e.touches.length === 1) {
@@ -406,14 +411,18 @@ export default function Canvas({
         touches: e.touches,
       });
     } else if (e.touches.length === 2) {
-      // Two fingers - pinch zoom or two-finger pan
+      // Two fingers - distinguish between pinch and pan
       const currentDistance = getDistance(e.touches[0], e.touches[1]);
       const distanceRatio = currentDistance / initialPinchDistanceRef.current;
 
-      // Vérifier si c'est un pinch (changement de distance > 5%)
-      if (Math.abs(distanceRatio - 1) > 0.05) {
-        // Pinch zoom
+      // Déterminer si c'est un pinch (changement > 3%)
+      const isPinch = Math.abs(distanceRatio - 1) > 0.03;
+
+      if (isPinch) {
+        // PINCH ZOOM - zoomer et ignorer le pan
+        isPinchingRef.current = true;
         clearTimeout(longPressTimeoutRef.current);
+        
         const newScale = Math.min(
           Math.max(initialPinchScaleRef.current * distanceRatio, 0.1),
           4,
@@ -434,13 +443,14 @@ export default function Canvas({
         setScale(newScale);
         setOffsetX(offsetXNew);
         setOffsetY(offsetYNew);
-      } else {
-        // Two-finger pan
+      } else if (!isPinchingRef.current) {
+        // PAN UNIQUEMENT - deux doigts qui se déplacent sans pinch
         const midpoint = getMidpoint(e.touches[0], e.touches[1]);
-        const dx = midpoint.x - panningRef.current.startX;
-        const dy = midpoint.y - panningRef.current.startY;
-        setOffsetX(panningRef.current.prevOffsetX + dx);
-        setOffsetY(panningRef.current.prevOffsetY + dy);
+        const dx = midpoint.x - twoFingerPanStartRef.current.x;
+        const dy = midpoint.y - twoFingerPanStartRef.current.y;
+        
+        setOffsetX(twoFingerPanStartRef.current.offsetX + dx);
+        setOffsetY(twoFingerPanStartRef.current.offsetY + dy);
       }
     }
   };
@@ -449,14 +459,12 @@ export default function Canvas({
     if (e.touches.length === 0) {
       // All touches released
       clearTimeout(longPressTimeoutRef.current);
-      panningRef.current.active = false;
-      setIsPanning(false);
-      touchesRef.current = [];
+      draggingRef.current.active = false;
+      isPinchingRef.current = false;
     } else if (e.touches.length === 1) {
-      // One touch remains - treat as new touch
+      // One finger left - reset pinch
+      isPinchingRef.current = false;
       initialPinchDistanceRef.current = 0;
-      panningRef.current.active = false;
-      setIsPanning(false);
     }
 
     handleMouseUp();
