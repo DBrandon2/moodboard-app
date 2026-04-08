@@ -28,9 +28,7 @@ function App() {
         isMobile={windowSize.isMobile}
       />
       <Canvas
-        className={`w-full h-full ${
-          windowSize.isMobile ? "mb-16" : "ml-16"
-        }`}
+        className={`w-full h-full ${windowSize.isMobile ? "mb-16" : "ml-16"}`}
         offsetX={offsetX}
         setOffsetX={setOffsetX}
         offsetY={offsetY}

@@ -10,7 +10,12 @@ import {
   FiUploadCloud,
 } from "react-icons/fi";
 
-export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0, isMobile: isMobileFromProps = null }) {
+export default function Toolbar({
+  onRecenter,
+  offsetX = 0,
+  offsetY = 0,
+  isMobile: isMobileFromProps = null,
+}) {
   const [url, setUrl] = useState("");
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ left: 0, top: 0 });
@@ -25,7 +30,8 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0, isMobile
   const images = useBoardStore((state) => state.images);
 
   // Si isMobile est passé en prop, l'utiliser directement, sinon détecter localement
-  const isMobile = isMobileFromProps !== null ? isMobileFromProps : isMobileLocal;
+  const isMobile =
+    isMobileFromProps !== null ? isMobileFromProps : isMobileLocal;
 
   // Détecter si mobile (fallback si pas de prop)
   useEffect(() => {
@@ -162,11 +168,13 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0, isMobile
   }, [addMenuOpen]);
 
   return (
-    <div className={`flex items-center justify-center gap-2 sm:gap-4 absolute z-[2000] bg-gray-800/80 toolbar touch-none border-gray-700 ${
-      isMobile
-        ? 'w-full h-16 flex-row py-2 border-t bottom-0 left-0'
-        : 'w-16 h-full flex-col py-4 border-r top-0 left-0'
-    }`}>
+    <div
+      className={`flex items-center justify-center gap-2 sm:gap-4 absolute z-[2000] bg-gray-800/80 toolbar touch-none border-gray-700 ${
+        isMobile
+          ? "w-full h-16 flex-row py-2 border-t bottom-0 left-0"
+          : "w-16 h-full flex-col py-4 border-r top-0 left-0"
+      }`}
+    >
       {/* Bouton Recentrer */}
       <button
         onClick={(e) => {
