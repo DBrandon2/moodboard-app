@@ -192,6 +192,9 @@ export default function Toolbar({
         padding: isMobile ? "0.5rem" : "1rem",
         borderTop: isMobile ? "1px solid #374151" : "none",
         borderRight: isMobile ? "none" : "1px solid #374151",
+        // DEBUG: Visual indicator
+        backgroundColor: isMobile ? "#ff0000" : "#0000ff",
+        opacity: 0.9,
       }}
       data-mobile={isMobile}
     >
