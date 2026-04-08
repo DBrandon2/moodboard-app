@@ -2,12 +2,14 @@ import "./App.css";
 import Canvas from "./components/Canvas/Canvas";
 import Toolbar from "./components/Canvas/Toolbar";
 import { useState } from "react";
+import { useWindowSize } from "./hooks/useWindowSize";
 
 function App() {
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
   const [scale, setScale] = useState(1);
   const [openPanel, setOpenPanel] = useState(null);
+  const windowSize = useWindowSize();
 
   const handleRecenter = () => {
     setOffsetX(0);
@@ -23,9 +25,12 @@ function App() {
         onRecenter={handleRecenter}
         offsetX={offsetX}
         offsetY={offsetY}
+        isMobile={windowSize.isMobile}
       />
       <Canvas
-        className="w-full h-full mb-16 md:mb-0 md:ml-16"
+        className={`w-full h-full ${
+          windowSize.isMobile ? "mb-16" : "ml-16"
+        }`}
         offsetX={offsetX}
         setOffsetX={setOffsetX}
         offsetY={offsetY}

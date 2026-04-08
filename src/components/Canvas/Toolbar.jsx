@@ -10,11 +10,11 @@ import {
   FiUploadCloud,
 } from "react-icons/fi";
 
-export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
+export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0, isMobile: isMobileFromProps = null }) {
   const [url, setUrl] = useState("");
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ left: 0, top: 0 });
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobileLocal, setIsMobileLocal] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const fileInputRef = useRef(null);
   const importInputRef = useRef(null);
@@ -24,21 +24,26 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
   const loadFromImport = useBoardStore((state) => state.loadFromImport);
   const images = useBoardStore((state) => state.images);
 
-  // Détecter si mobile
-  useEffect(() => {
-    const checkMobile = () => {
-      const mobile =
-        window.innerWidth < 768 ||
-        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-          navigator.userAgent,
-        );
-      setIsMobile(mobile);
-    };
+  // Si isMobile est passé en prop, l'utiliser directement, sinon détecter localement
+  const isMobile = isMobileFromProps !== null ? isMobileFromProps : isMobileLocal;
 
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
-  }, []);
+  // Détecter si mobile (fallback si pas de prop)
+  useEffect(() => {
+    if (isMobileFromProps === null) {
+      const checkMobile = () => {
+        const mobile =
+          window.innerWidth < 768 ||
+          /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+            navigator.userAgent,
+          );
+        setIsMobileLocal(mobile);
+      };
+
+      checkMobile();
+      window.addEventListener("resize", checkMobile);
+      return () => window.removeEventListener("resize", checkMobile);
+    }
+  }, [isMobileFromProps]);
 
   const handleAddImage = () => {
     if (!url) return;
@@ -157,7 +162,11 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
   }, [addMenuOpen]);
 
   return (
-    <div className="w-full h-16 flex flex-row items-center justify-center py-2 gap-2 sm:gap-4 border-t border-gray-700 absolute bottom-0 left-0 z-[2000] bg-gray-800/80 toolbar md:w-16 md:h-full md:flex-col md:items-center md:py-4 md:border-r md:border-t-0 md:top-0 md:left-0 md:bottom-auto touch-none">
+    <div className={`flex items-center justify-center gap-2 sm:gap-4 absolute z-[2000] bg-gray-800/80 toolbar touch-none border-gray-700 ${
+      isMobile
+        ? 'w-full h-16 flex-row py-2 border-t bottom-0 left-0'
+        : 'w-16 h-full flex-col py-4 border-r top-0 left-0'
+    }`}>
       {/* Bouton Recentrer */}
       <button
         onClick={(e) => {
