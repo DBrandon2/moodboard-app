@@ -157,7 +157,7 @@ export default function Toolbar({ onRecenter, offsetX = 0, offsetY = 0 }) {
   }, [addMenuOpen]);
 
   return (
-    <div className="w-full h-16 flex flex-row items-center justify-center py-2 gap-2 sm:gap-4 border-t border-gray-700 absolute bottom-0 left-0 z-[2000] bg-gray-800/80 toolbar md:w-16 md:h-full md:flex-col md:items-center md:py-4 md:border-r md:border-t-0 md:top-0 md:bottom-auto touch-none">
+    <div className="w-full h-16 flex flex-row items-center justify-center py-2 gap-2 sm:gap-4 border-t border-gray-700 absolute bottom-0 left-0 z-[2000] bg-gray-800/80 toolbar md:w-16 md:h-full md:flex-col md:items-center md:py-4 md:border-r md:border-t-0 md:top-0 md:left-0 md:bottom-auto touch-none">
       {/* Bouton Recentrer */}
       <button
         onClick={(e) => {

@@ -25,7 +25,7 @@ function App() {
         offsetY={offsetY}
       />
       <Canvas
-        className="w-full h-full"
+        className="w-full h-full mb-16 md:mb-0 md:ml-16"
         offsetX={offsetX}
         setOffsetX={setOffsetX}
         offsetY={offsetY}

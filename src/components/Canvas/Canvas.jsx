@@ -47,6 +47,7 @@ export default function Canvas({
   // Touch handling refs
   const touchesRef = useRef([]);
   const longPressTimeoutRef = useRef(null);
+  const touchStartPosRef = useRef({ x: 0, y: 0 }); // Tracker la position de départ
   const initialPinchDistanceRef = useRef(0);
   const initialPinchScaleRef = useRef(1);
   const initialTwoFingerMidpointRef = useRef({ x: 0, y: 0 });
@@ -338,6 +339,8 @@ export default function Canvas({
     if (e.touches.length === 1) {
       // Single touch - start long press timer
       const touch = e.touches[0];
+      touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+
       const rect = containerRef.current.getBoundingClientRect();
       const mouseX =
         (touch.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
@@ -345,7 +348,7 @@ export default function Canvas({
         (touch.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
 
       longPressTimeoutRef.current = setTimeout(() => {
-        // Long press detected
+        // Long press detected - on vérifie si on est toujours au même endroit
         for (let i = images.length - 1; i >= 0; i--) {
           const img = images[i];
           const local = getLocalPoint(mouseX, mouseY, img);
@@ -400,8 +403,20 @@ export default function Canvas({
     touchesRef.current = Array.from(e.touches);
 
     if (e.touches.length === 1) {
-      // Single touch - treat as mouse move
+      // Vérifier si le doigt a bougé - annuler le long press si mouvement > 10px
       const touch = e.touches[0];
+      const movementX = Math.abs(touch.clientX - touchStartPosRef.current.x);
+      const movementY = Math.abs(touch.clientY - touchStartPosRef.current.y);
+      const totalMovement = Math.sqrt(
+        movementX * movementX + movementY * movementY,
+      );
+
+      if (totalMovement > 10) {
+        // C'est un drag, pas un long press
+        clearTimeout(longPressTimeoutRef.current);
+      }
+
+      // Single touch - treat as mouse move
       handleMouseMove({
         ...e,
         clientX: touch.clientX,
@@ -411,7 +426,7 @@ export default function Canvas({
     } else if (e.touches.length === 2) {
       // Two fingers - PINCH et PAN EN MÊME TEMPS (comme Procreate)
       clearTimeout(longPressTimeoutRef.current);
-      
+
       // 1. PINCH ZOOM
       const currentDistance = getDistance(e.touches[0], e.touches[1]);
       const distanceRatio = currentDistance / initialPinchDistanceRef.current;
@@ -422,8 +437,10 @@ export default function Canvas({
 
       // 2. PAN - mouvement du midpoint
       const currentMidpoint = getMidpoint(e.touches[0], e.touches[1]);
-      const panDeltaX = currentMidpoint.x - initialTwoFingerMidpointRef.current.x;
-      const panDeltaY = currentMidpoint.y - initialTwoFingerMidpointRef.current.y;
+      const panDeltaX =
+        currentMidpoint.x - initialTwoFingerMidpointRef.current.x;
+      const panDeltaY =
+        currentMidpoint.y - initialTwoFingerMidpointRef.current.y;
 
       // 3. APPLIQUER LES DEUX TRANSFORMATIONS EN MÊME TEMPS
       // Le zoom se fait au midpoint INITIAL
