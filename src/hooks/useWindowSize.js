@@ -28,10 +28,20 @@ export const useWindowSize = () => {
       timeoutRef.current = setTimeout(() => {
         const width = window.innerWidth;
         const height = window.innerHeight;
+        const isMobileState = width < 768;
+        
+        // DEBUG: Log resize events
+        console.log('[useWindowSize] Resize detected:', {
+          width,
+          height,
+          isMobile: isMobileState,
+          timestamp: new Date().toISOString(),
+        });
+        
         setWindowSize({
           width,
           height,
-          isMobile: width < 768,
+          isMobile: isMobileState,
         });
       }, 100); // Debounce to match iOS event lag & prevent excessive re-renders
     };
@@ -39,38 +49,78 @@ export const useWindowSize = () => {
     window.addEventListener("resize", handleResize);
 
     // Fallback: matchMedia listener for CSS breakpoint changes
-    // Some iOS updates trigger media query changes without resize events
-    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    // CRITICAL: Some iOS Safari versions don't trigger resize on split screen
+    const mediaQuery768 = window.matchMedia("(max-width: 767px)");
+    const mediaQueryCoarse = window.matchMedia("(pointer: coarse)"); // Touch device fallback
     
     const handleMediaChange = (e) => {
+      const isMobileState = e.matches;
+      
+      // DEBUG: Log media query changes
+      console.log('[useWindowSize] Media query changed:', {
+        query: e.media,
+        matches: e.matches,
+        width: window.innerWidth,
+        isMobile: isMobileState,
+        timestamp: new Date().toISOString(),
+      });
+      
       // Force update when media query state changes
       setWindowSize(prev => ({
         ...prev,
-        isMobile: e.matches,
-        width: window.innerWidth, // Capture real width at moment of change
+        isMobile: isMobileState,
+        width: window.innerWidth,
         height: window.innerHeight,
       }));
     };
 
     // Safari <14 compatibility (uses addListener instead of addEventListener)
-    if (mediaQuery.addListener) {
-      mediaQuery.addListener(handleMediaChange);
+    if (mediaQuery768.addListener) {
+      mediaQuery768.addListener(handleMediaChange);
     } else {
-      mediaQuery.addEventListener("change", handleMediaChange);
+      mediaQuery768.addEventListener("change", handleMediaChange);
+    }
+
+    // ADDITIONAL: Also listen to pointer detection (coarse = touch)
+    if (mediaQueryCoarse.addListener) {
+      mediaQueryCoarse.addListener(handleMediaChange);
+    } else {
+      mediaQueryCoarse.addEventListener("change", handleMediaChange);
     }
 
     // Initial state update in case hook is added after mount
     handleResize();
+    
+    // Also trigger immediate check of media queries on mount
+    const initialCheck = () => {
+      const isMobile = mediaQuery768.matches;
+      console.log('[useWindowSize] Initial media query check:', {
+        isMobile,
+        width: window.innerWidth,
+      });
+      setWindowSize({
+        width: window.innerWidth,
+        height: window.innerHeight,
+        isMobile,
+      });
+    };
+    initialCheck();
 
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       window.removeEventListener("resize", handleResize);
       
-      // Cleanup media query listener
-      if (mediaQuery.removeListener) {
-        mediaQuery.removeListener(handleMediaChange);
+      // Cleanup media query listeners
+      if (mediaQuery768.removeListener) {
+        mediaQuery768.removeListener(handleMediaChange);
       } else {
-        mediaQuery.removeEventListener("change", handleMediaChange);
+        mediaQuery768.removeEventListener("change", handleMediaChange);
+      }
+      
+      if (mediaQueryCoarse.removeListener) {
+        mediaQueryCoarse.removeListener(handleMediaChange);
+      } else {
+        mediaQueryCoarse.removeEventListener("change", handleMediaChange);
       }
     };
   }, []);

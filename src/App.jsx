@@ -1,6 +1,7 @@
 import "./App.css";
 import Canvas from "./components/Canvas/Canvas";
 import Toolbar from "./components/Canvas/Toolbar";
+import Debug from "./components/Debug";
 import { useState } from "react";
 import { useWindowSize } from "./hooks/useWindowSize";
 
@@ -36,6 +37,8 @@ function App() {
         scale={scale}
         setScale={setScale}
       />
+      {/* DEBUG Component - Remove in production */}
+      <Debug />
     </div>
   );
 }

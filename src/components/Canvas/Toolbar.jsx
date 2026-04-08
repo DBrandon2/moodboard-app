@@ -33,6 +33,16 @@ export default function Toolbar({
   const isMobile =
     isMobileFromProps !== null ? isMobileFromProps : isMobileLocal;
 
+  // DEBUG: Log isMobile prop changes
+  useEffect(() => {
+    console.log('[Toolbar] isMobile state changed:', {
+      isMobile,
+      isMobileFromProps,
+      isMobileLocal,
+      timestamp: new Date().toISOString(),
+    });
+  }, [isMobile, isMobileFromProps, isMobileLocal]);
+
   // Détecter si mobile (fallback si pas de prop)
   useEffect(() => {
     if (isMobileFromProps === null) {
@@ -183,6 +193,7 @@ export default function Toolbar({
         borderTop: isMobile ? "1px solid #374151" : "none",
         borderRight: isMobile ? "none" : "1px solid #374151",
       }}
+      data-mobile={isMobile}
     >
       {/* Bouton Recentrer */}
       <button
