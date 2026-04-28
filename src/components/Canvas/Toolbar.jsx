@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useBoardStore } from "../../store/boardStore";
 import {
   FiCompass,
@@ -18,12 +19,10 @@ export default function Toolbar({
 }) {
   const [url, setUrl] = useState("");
   const [addMenuOpen, setAddMenuOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState({ left: 0, top: 0 });
   const [isMobileLocal, setIsMobileLocal] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const fileInputRef = useRef(null);
   const importInputRef = useRef(null);
-  const addButtonRef = useRef(null);
   const addImage = useBoardStore((state) => state.addimage);
   const clearStorage = useBoardStore((state) => state.clearStorage);
   const loadFromImport = useBoardStore((state) => state.loadFromImport);
@@ -134,19 +133,6 @@ export default function Toolbar({
 
   const handleAddMenuToggle = (e) => {
     e.stopPropagation();
-    if (!addMenuOpen && addButtonRef.current) {
-      const rect = addButtonRef.current.getBoundingClientRect();
-      const menuWidth = 320; // w-80
-      const padding = 8;
-      let left = rect.left + rect.width / 2 - menuWidth / 2;
-      // clamp horizontally
-      left = Math.max(
-        padding,
-        Math.min(left, window.innerWidth - padding - menuWidth),
-      );
-      const top = rect.bottom + 8;
-      setMenuPos({ left, top });
-    }
     setAddMenuOpen(!addMenuOpen);
   };
 
@@ -168,198 +154,231 @@ export default function Toolbar({
   }, [addMenuOpen]);
 
   return (
-    <div
-      className="flex items-center justify-center gap-2 sm:gap-4 bg-gray-800/80 toolbar touch-none border-gray-700"
-      style={{
-        position: "fixed",
-        bottom: isMobile ? "0" : "auto",
-        top: isMobile ? "auto" : "0",
-        left: "0",
-        right: "0",
-        zIndex: 2000,
-        width: isMobile ? "100%" : "4rem",
-        height: isMobile ? "4rem" : "100%",
-        flexDirection: isMobile ? "row" : "column",
-        padding: isMobile ? "max(0.5rem, env(safe-area-inset-bottom))" : "1rem",
-        borderTop: isMobile ? "1px solid #374151" : "none",
-        borderRight: isMobile ? "none" : "1px solid #374151",
-        backdropFilter: "blur(10px)",
-      }}
-      data-mobile={isMobile}
-    >
-      {/* Bouton Recentrer */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onRecenter();
+    <>
+      <div
+        className="flex items-center justify-center gap-2 sm:gap-4 bg-gray-800/90 toolbar touch-none border-gray-700"
+        style={{
+          position: "fixed",
+          bottom: isMobile ? "0" : "auto",
+          top: isMobile ? "auto" : "0",
+          left: "0",
+          right: "0",
+          zIndex: 2000,
+          width: isMobile ? "100%" : "4rem",
+          height: isMobile ? "4rem" : "100%",
+          flexDirection: isMobile ? "row" : "column",
+          padding: isMobile
+            ? "max(0.5rem, env(safe-area-inset-bottom))"
+            : "1rem",
+          borderTop: isMobile ? "1px solid #374151" : "none",
+          borderRight: isMobile ? "none" : "1px solid #374151",
+          backdropFilter: "blur(10px)",
         }}
-        className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600"
-        title="Recentrer"
+        data-mobile={isMobile}
       >
-        <FiCompass />
-      </button>
-
-      {/* Bouton Add (plus) */}
-      <button
-        ref={addButtonRef}
-        onClick={handleAddMenuToggle}
-        className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600"
-        title="Ajouter une image"
-      >
-        <FiPlus />
-      </button>
-
-      {/* Bouton Télécharger données */}
-      <button
-        onClick={handleDownloadData}
-        className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600"
-        title="Télécharger la sauvegarde"
-      >
-        <FiDownload />
-      </button>
-
-      {/* Bouton Importer données */}
-      <button
-        onClick={() => importInputRef.current?.click()}
-        className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600"
-        title="Importer une sauvegarde"
-      >
-        <FiUploadCloud />
-      </button>
-      <input
-        type="file"
-        ref={importInputRef}
-        className="hidden"
-        accept=".json"
-        onChange={handleImportFile}
-      />
-
-      {/* Bouton Effacer données */}
-      <div className="relative">
+        {/* Bouton Recentrer */}
         <button
-          onClick={() => setShowClearConfirm(true)}
-          className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-red-700 rounded transition-colors active:bg-red-800"
-          title="Effacer le moodboard"
-          disabled={images.length === 0}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRecenter();
+          }}
+          className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600"
+          title="Recentrer"
         >
-          <FiTrash2 />
+          <FiCompass />
         </button>
 
-        {/* Confirmation modal */}
-        {showClearConfirm && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-gray-800 rounded-lg p-6 max-w-sm w-full border border-gray-700">
-              <h3 className="text-white text-lg font-semibold mb-2">
-                Êtes-vous sûr ?
-              </h3>
-              <p className="text-gray-300 mb-6">
-                Cette action supprimera toutes les images et la session sera
-                réinitialisée.
-              </p>
-              <div className="flex gap-3 justify-end">
-                <button
-                  onClick={() => setShowClearConfirm(false)}
-                  className="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors"
-                >
-                  Annuler
-                </button>
-                <button
-                  onClick={handleClearStorage}
-                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors font-semibold"
-                >
-                  Effacer
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Bouton Add (plus) */}
+        <button
+          onClick={handleAddMenuToggle}
+          className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600"
+          title="Ajouter une image"
+        >
+          <FiPlus />
+        </button>
+
+        {/* Bouton Télécharger données */}
+        <button
+          onClick={handleDownloadData}
+          className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600"
+          title="Télécharger la sauvegarde"
+        >
+          <FiDownload />
+        </button>
+
+        {/* Bouton Importer données */}
+        <button
+          onClick={() => importInputRef.current?.click()}
+          className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-gray-700 rounded transition-colors active:bg-gray-600"
+          title="Importer une sauvegarde"
+        >
+          <FiUploadCloud />
+        </button>
+        <input
+          type="file"
+          ref={importInputRef}
+          className="hidden"
+          accept=".json"
+          onChange={handleImportFile}
+        />
+
+        {/* Bouton Effacer données */}
+        <div>
+          <button
+            onClick={() => setShowClearConfirm(true)}
+            className="text-white text-2xl sm:text-3xl p-2 sm:p-3 hover:bg-red-700 rounded transition-colors active:bg-red-800"
+            title="Effacer le moodboard"
+            disabled={images.length === 0}
+          >
+            <FiTrash2 />
+          </button>
+        </div>
       </div>
 
-      {/* Menu d'ajout animé */}
-      {addMenuOpen && (
-        <div
-          data-add-menu
-          style={{
-            animation: "menu-appear 0.18s ease-out forwards",
-            left: isMobile ? "50%" : menuPos.left,
-            top: isMobile ? "50%" : menuPos.top,
-            transform: isMobile ? "translate(-50%, -50%)" : "none",
-          }}
-          className="fixed bg-amber-50 border border-gray-300 rounded-lg shadow-xl py-4 px-6 z-50 w-80 max-w-[90%] sm:w-80
-            transform origin-top center"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <p className="text-gray-900 font-semibold mb-3 text-lg">
-            Ajouter une image
-          </p>
-          <input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            onKeyDown={handleKeyDown}
-            autoFocus
-            type="text"
-            placeholder={isMobile ? "https://..." : "https://... (ou Ctrl+V)"}
-            className="px-4 py-3 rounded text-gray-900 border border-gray-400 w-full mb-4 text-base"
-          />
-          <div className="flex flex-col sm:flex-row gap-2 justify-between">
-            <button
-              onClick={handleAddImage}
-              className="flex items-center justify-center px-4 py-3 bg-gray-800 text-white rounded hover:bg-gray-900 active:bg-gray-950 transition-colors font-medium touch-none"
-            >
-              <FiLink className="mr-2" /> URL
-            </button>
-            <button
-              onClick={() => fileInputRef.current.click()}
-              className="flex items-center justify-center px-4 py-3 bg-gray-800 text-white rounded hover:bg-gray-900 active:bg-gray-950 transition-colors font-medium touch-none"
-            >
-              <FiUpload className="mr-2" /> Fichier
-            </button>
-          </div>
-          <input
-            type="file"
-            ref={fileInputRef}
-            className="hidden"
-            accept="image/*"
-            onChange={(e) => {
-              const file = e.target.files && e.target.files[0];
-              if (!file || !file.type.startsWith("image/")) return;
-              const reader = new FileReader();
-              reader.onload = () => {
-                const img = new Image();
-                img.src = reader.result;
-                img.onload = () => {
-                  const maxWidth = 200;
-                  const scale = maxWidth / img.width;
-                  const width = maxWidth;
-                  const height = img.height * scale;
-                  const screenCenterX = window.innerWidth / 2;
-                  const screenCenterY = window.innerHeight / 2;
+      {/* Portals pour les modals (en dehors de la Toolbar) */}
+      {/* Modal de confirmation */}
+      {showClearConfirm &&
+        createPortal(
+          <>
+            <div
+              className="fixed inset-0 bg-black/50 z-40"
+              onClick={() => setShowClearConfirm(false)}
+            />
+            <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+              <div className="bg-gray-800 rounded-lg p-6 xs:p-8 w-full max-w-sm border border-gray-700 shadow-2xl">
+                <h3 className="text-white text-lg xs:text-xl font-semibold mb-3 xs:mb-4">
+                  Êtes-vous sûr ?
+                </h3>
+                <p className="text-gray-300 mb-6 text-base xs:text-lg">
+                  Cette action supprimera toutes les images et la session sera
+                  réinitialisée.
+                </p>
+                <div className="flex flex-col xs:flex-row gap-3 gap-y-3 xs:gap-x-4 xs:justify-end">
+                  <button
+                    onClick={() => setShowClearConfirm(false)}
+                    className="px-4 xs:px-6 py-3 xs:py-4 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors 
+                    font-medium text-base xs:text-lg min-h-[44px] xs:min-h-[48px] w-full xs:w-auto"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={handleClearStorage}
+                    className="px-4 xs:px-6 py-3 xs:py-4 bg-red-600 text-white rounded hover:bg-red-700 transition-colors 
+                    font-semibold text-base xs:text-lg min-h-[44px] xs:min-h-[48px] w-full xs:w-auto"
+                  >
+                    Effacer
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>,
+          document.body,
+        )}
 
-                  addImage({
-                    url: reader.result,
-                    x: screenCenterX - offsetX - width / 2,
-                    y: screenCenterY - offsetY - height / 2,
-                    width,
-                    height,
-                    originalWidth: img.width,
-                    originalHeight: img.height,
-                  });
-                  setAddMenuOpen(false);
-                };
-              };
-              reader.readAsDataURL(file);
-              e.target.value = "";
-            }}
-          />
-        </div>
-      )}
-      {/* animation keyframes */}
-      <style>{`
-        @keyframes menu-appear {
-          0% { opacity: 0; transform: scale(0.9) translateY(-10px); }
-          100% { opacity: 1; transform: scale(1) translateY(0); }
-        }
-      `}</style>
-    </div>
+      {/* Modal d'ajout d'image */}
+      {addMenuOpen &&
+        createPortal(
+          <>
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 bg-black/50 z-40"
+              onClick={() => setAddMenuOpen(false)}
+            />
+
+            {/* Modal/Drawer - Responsive positioning */}
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className={`
+              fixed z-50 bg-amber-50 border border-gray-300 rounded-lg shadow-2xl
+              transition-all duration-300 transform origin-center
+              ${
+                isMobile
+                  ? "bottom-16 left-2 right-2 max-h-96"
+                  : "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 max-h-96"
+              }
+              animated-menu
+            `}
+              style={{
+                animation: "menu-appear 0.18s ease-out forwards",
+              }}
+            >
+              {/* Contenu du modal */}
+              <div className="flex flex-col h-full p-4 xs:p-6 overflow-y-auto">
+                <p className="text-gray-900 font-semibold mb-4 text-lg xs:text-xl flex-shrink-0">
+                  Ajouter une image
+                </p>
+
+                <input
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  autoFocus
+                  type="text"
+                  placeholder="https://..."
+                  className="px-4 py-3 xs:py-4 rounded text-gray-900 border border-gray-400 w-full mb-4 text-base xs:text-lg 
+                  min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-700 flex-shrink-0"
+                />
+
+                <div className="flex flex-col gap-2 xs:gap-3 mt-auto flex-shrink-0">
+                  <button
+                    onClick={handleAddImage}
+                    className="flex items-center justify-center px-4 py-4 xs:py-5 bg-gray-800 text-white rounded 
+                    hover:bg-gray-900 active:bg-gray-950 transition-colors font-medium touch-none
+                    text-base xs:text-lg min-h-[44px] xs:min-h-[48px] w-full"
+                  >
+                    <FiLink className="mr-2" /> URL
+                  </button>
+                  <button
+                    onClick={() => fileInputRef.current.click()}
+                    className="flex items-center justify-center px-4 py-4 xs:py-5 bg-gray-800 text-white rounded 
+                    hover:bg-gray-900 active:bg-gray-950 transition-colors font-medium touch-none
+                    text-base xs:text-lg min-h-[44px] xs:min-h-[48px] w-full"
+                  >
+                    <FiUpload className="mr-2" /> Fichier
+                  </button>
+                </div>
+              </div>
+
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files && e.target.files[0];
+                  if (!file || !file.type.startsWith("image/")) return;
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    const img = new Image();
+                    img.src = reader.result;
+                    img.onload = () => {
+                      const maxWidth = 200;
+                      const scale = maxWidth / img.width;
+                      const width = maxWidth;
+                      const height = img.height * scale;
+                      const screenCenterX = window.innerWidth / 2;
+                      const screenCenterY = window.innerHeight / 2;
+
+                      addImage({
+                        url: reader.result,
+                        x: screenCenterX - offsetX - width / 2,
+                        y: screenCenterY - offsetY - height / 2,
+                        width,
+                        height,
+                        originalWidth: img.width,
+                        originalHeight: img.height,
+                      });
+                      setAddMenuOpen(false);
+                    };
+                  };
+                  reader.readAsDataURL(file);
+                  e.target.value = "";
+                }}
+              />
+            </div>
+          </>,
+          document.body,
+        )}
+    </>
   );
 }
