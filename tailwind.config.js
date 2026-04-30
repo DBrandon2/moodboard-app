@@ -9,6 +9,9 @@ export default {
         md: "768px",
         lg: "1024px",
       },
+      animation: {
+        slideUp: "slideUp 0.3s ease-out forwards",
+      },
     },
   },
   plugins: [],

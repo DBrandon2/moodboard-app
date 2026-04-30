@@ -1,9 +1,12 @@
 @import "tailwindcss";
 
-/* Force mobile layout on touch devices (iPad, etc) ONLY on small screens */
-/* Combine pointer: coarse with max-width to avoid applying on desktop touchscreens */
 @media (pointer: coarse) and (max-width: 767px) {
-  /* Force navbar to bottom only on small touch devices */
+  @supports (viewport-height: 1px) {
+    body {
+      max-height: 100dvh;
+    }
+  }
+
   .toolbar {
     position: fixed !important;
     bottom: 0 !important;
@@ -13,9 +16,9 @@
     width: 100% !important;
     height: 4rem !important;
     flex-direction: row !important;
-    border-top: 1px solid #374151 !important;
-    border-right: none !important;
     z-index: 2000 !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-right: none !important;
   }
 }
 
@@ -27,14 +30,8 @@ body,
   margin: 0;
   padding: 0;
   overflow: hidden;
-
   color-scheme: light dark;
   color: rgba(255, 255, 255, 0.87);
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
 }
 
 button {
@@ -48,16 +45,33 @@ a {
   cursor: pointer;
 }
 
-/* Menu animation */
 @keyframes menu-appear {
   0% {
     opacity: 0;
-    transform: scale(0.9) translateY(-10px);
+    transform: scale(0.95) translateY(-10px);
   }
   100% {
     opacity: 1;
     transform: scale(1) translateY(0);
   }
+}
+
+@keyframes slideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
 }
 
 input {

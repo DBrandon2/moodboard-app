@@ -1,4 +1,3 @@
-import "./App.css";
 import Canvas from "./components/Canvas/Canvas";
 import Toolbar from "./components/Canvas/Toolbar";
 import { useState } from "react";
@@ -21,9 +20,7 @@ function App() {
     <div
       className="w-screen h-screen select-none relative"
       style={{
-        paddingBottom: windowSize.isMobile
-          ? "max(4rem, calc(4rem + env(safe-area-inset-bottom)))"
-          : "0",
+        paddingBottom: 0,
       }}
     >
       <Toolbar
