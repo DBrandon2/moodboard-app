@@ -10,7 +10,6 @@ export default function Canvas({
   setOffsetY,
   scale,
   setScale,
-  isMobile = false,
 }) {
   const images = useBoardStore((state) => state.images);
   const selectedImageIds = useBoardStore((state) => state.selectedImageIds);
@@ -46,8 +45,11 @@ export default function Canvas({
 
   // Touch handling refs
   const touchesRef = useRef([]);
-  const longPressTimeoutRef = useRef(null);
   const touchStartPosRef = useRef({ x: 0, y: 0 }); // Tracker la position de départ
+  const touchStartImageIdRef = useRef(null);
+  const touchMovedRef = useRef(false);
+  const isPinchingRef = useRef(false);
+  const touchStartImageWasSelectedRef = useRef(false);
   const initialPinchDistanceRef = useRef(0);
   const initialPinchScaleRef = useRef(1);
   const initialTwoFingerMidpointRef = useRef({ x: 0, y: 0 });
@@ -329,15 +331,63 @@ export default function Canvas({
     };
   };
 
+  const getImageIdAtPoint = (mouseX, mouseY) => {
+    for (let i = images.length - 1; i >= 0; i--) {
+      const img = images[i];
+      const local = getLocalPoint(mouseX, mouseY, img);
+
+      if (
+        local.x >= 0 &&
+        local.x <= img.width &&
+        local.y >= 0 &&
+        local.y <= img.height
+      ) {
+        return img.id;
+      }
+    }
+    return null;
+  };
+
+  const openContextMenuAtPoint = (clientX, clientY) => {
+    const rect = containerRef.current.getBoundingClientRect();
+    const mouseX =
+      (clientX - rect.left - offsetRef.current.x) / scaleRef.current;
+    const mouseY =
+      (clientY - rect.top - offsetRef.current.y) / scaleRef.current;
+
+    for (let i = images.length - 1; i >= 0; i--) {
+      const img = images[i];
+      const local = getLocalPoint(mouseX, mouseY, img);
+
+      if (
+        local.x >= 0 &&
+        local.x <= img.width &&
+        local.y >= 0 &&
+        local.y <= img.height
+      ) {
+        if (!selectedImageIds.includes(img.id)) {
+          selectImages([img.id]);
+        }
+        setContextMenu({
+          visible: true,
+          x: clientX,
+          y: clientY,
+          imageId: img.id,
+        });
+        break;
+      }
+    }
+  };
+
   const handleTouchStart = (e) => {
     // Ignorer si le menu est ouvert
     if (contextMenu.visible) return;
     if (e.target.closest(".toolbar")) return;
 
     touchesRef.current = Array.from(e.touches);
+    touchMovedRef.current = false;
 
     if (e.touches.length === 1) {
-      // Single touch - start long press timer
       const touch = e.touches[0];
       touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
 
@@ -347,31 +397,10 @@ export default function Canvas({
       const mouseY =
         (touch.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
 
-      longPressTimeoutRef.current = setTimeout(() => {
-        // Long press detected - on vérifie si on est toujours au même endroit
-        for (let i = images.length - 1; i >= 0; i--) {
-          const img = images[i];
-          const local = getLocalPoint(mouseX, mouseY, img);
-
-          if (
-            local.x >= 0 &&
-            local.x <= img.width &&
-            local.y >= 0 &&
-            local.y <= img.height
-          ) {
-            if (!selectedImageIds.includes(img.id)) {
-              selectImages([img.id]);
-            }
-            setContextMenu({
-              visible: true,
-              x: touch.clientX,
-              y: touch.clientY,
-              imageId: img.id,
-            });
-            break;
-          }
-        }
-      }, 500);
+      const touchedImageId = getImageIdAtPoint(mouseX, mouseY);
+      touchStartImageIdRef.current = touchedImageId;
+      touchStartImageWasSelectedRef.current =
+        touchedImageId !== null && selectedImageIds.includes(touchedImageId);
 
       // Procéder au drag ou sélection normalement
       handleMouseDown({
@@ -380,11 +409,16 @@ export default function Canvas({
         clientX: touch.clientX,
         clientY: touch.clientY,
         touches: e.touches,
+        skipSelection:
+          touchedImageId !== null && !touchStartImageWasSelectedRef.current,
         preventDefault: () => e.preventDefault(),
       });
     } else if (e.touches.length === 2) {
+      isPinchingRef.current = true;
+      touchMovedRef.current = true;
+      touchStartImageIdRef.current = null;
+
       // Two fingers - prepare for combined pinch + pan
-      clearTimeout(longPressTimeoutRef.current);
       initialPinchDistanceRef.current = getDistance(e.touches[0], e.touches[1]);
       initialPinchScaleRef.current = scaleRef.current;
 
@@ -403,7 +437,6 @@ export default function Canvas({
     touchesRef.current = Array.from(e.touches);
 
     if (e.touches.length === 1) {
-      // Vérifier si le doigt a bougé - annuler le long press si mouvement > 10px
       const touch = e.touches[0];
       const movementX = Math.abs(touch.clientX - touchStartPosRef.current.x);
       const movementY = Math.abs(touch.clientY - touchStartPosRef.current.y);
@@ -412,8 +445,8 @@ export default function Canvas({
       );
 
       if (totalMovement > 10) {
-        // C'est un drag, pas un long press
-        clearTimeout(longPressTimeoutRef.current);
+        touchMovedRef.current = true;
+        touchStartImageIdRef.current = null;
       }
 
       // Single touch - treat as mouse move
@@ -424,8 +457,10 @@ export default function Canvas({
         touches: e.touches,
       });
     } else if (e.touches.length === 2) {
+      isPinchingRef.current = true;
+      touchMovedRef.current = true;
+      touchStartImageIdRef.current = null;
       // Two fingers - PINCH et PAN EN MÊME TEMPS (comme Procreate)
-      clearTimeout(longPressTimeoutRef.current);
 
       // 1. PINCH ZOOM
       const currentDistance = getDistance(e.touches[0], e.touches[1]);
@@ -467,8 +502,37 @@ export default function Canvas({
 
   const handleTouchEnd = (e) => {
     if (e.touches.length === 0) {
-      // All touches released
-      clearTimeout(longPressTimeoutRef.current);
+      const touch = e.changedTouches[0];
+
+      if (
+        touch &&
+        !touchMovedRef.current &&
+        touchStartImageIdRef.current &&
+        !isPinchingRef.current
+      ) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const mouseX =
+          (touch.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
+        const mouseY =
+          (touch.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
+        const endedImageId = getImageIdAtPoint(mouseX, mouseY);
+
+        if (
+          endedImageId === touchStartImageIdRef.current &&
+          selectedImageIds.includes(endedImageId)
+        ) {
+          openContextMenuAtPoint(touch.clientX, touch.clientY);
+        }
+        if (
+          endedImageId === touchStartImageIdRef.current &&
+          !selectedImageIds.includes(endedImageId)
+        ) {
+          selectImages([endedImageId]);
+        }
+      }
+
+      touchStartImageIdRef.current = null;
+      isPinchingRef.current = false;
       panningRef.current.active = false;
       setIsPanning(false);
       touchesRef.current = [];
@@ -635,7 +699,7 @@ export default function Canvas({
 
       if (clickedImageId) {
         // Drag images
-        if (!selectedImageIds.includes(clickedImageId))
+        if (!selectedImageIds.includes(clickedImageId) && !e.skipSelection)
           selectImages([clickedImageId]);
         saveHistory();
         draggingRef.current.active = true;
