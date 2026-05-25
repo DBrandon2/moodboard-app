@@ -1,5 +1,31 @@
 import { useWindowSize } from "../hooks/useWindowSize";
-import { useEffect, useState } from "react";
+
+function readToolbarInfo() {
+  if (typeof document === "undefined") return null;
+
+  const toolbar = document.querySelector(".toolbar");
+
+  if (toolbar) {
+    const styles = window.getComputedStyle(toolbar);
+    return {
+      exists: true,
+      childrenCount: toolbar.children.length,
+      display: styles.display,
+      position: styles.position,
+      bottom: styles.bottom,
+      top: styles.top,
+      left: styles.left,
+      width: styles.width,
+      height: styles.height,
+      visibility: styles.visibility,
+      opacity: styles.opacity,
+      zIndex: styles.zIndex,
+      backgroundColor: styles.backgroundColor,
+    };
+  }
+
+  return { exists: false };
+}
 
 /**
  * DEBUG Component - Shows real-time responsive state
@@ -7,33 +33,7 @@ import { useEffect, useState } from "react";
  */
 export default function Debug() {
   const windowSize = useWindowSize();
-  const [toolbarInfo, setToolbarInfo] = useState(null);
-
-  useEffect(() => {
-    // Check toolbar element and its styles
-    const toolbar = document.querySelector(".toolbar");
-
-    if (toolbar) {
-      const styles = window.getComputedStyle(toolbar);
-      setToolbarInfo({
-        exists: true,
-        childrenCount: toolbar.children.length,
-        display: styles.display,
-        position: styles.position,
-        bottom: styles.bottom,
-        top: styles.top,
-        left: styles.left,
-        width: styles.width,
-        height: styles.height,
-        visibility: styles.visibility,
-        opacity: styles.opacity,
-        zIndex: styles.zIndex,
-        backgroundColor: styles.backgroundColor,
-      });
-    } else {
-      setToolbarInfo({ exists: false });
-    }
-  }, []);
+  const toolbarInfo = readToolbarInfo();
 
   return (
     <div

@@ -1,7 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useBoardStore } from "../../store/boardStore";
+import {
+  GROUP_PACK_BORDER,
+  GROUP_PACK_HEIGHT,
+  GROUP_PACK_WIDTH,
+} from "../../constants/groupPack";
 import { FiCopy, FiTrash } from "react-icons/fi";
 import { RiFlipHorizontalLine, RiFlipVerticalLine } from "react-icons/ri";
+
+const GROUP_PACK_CARD_WIDTH = 100;
+const GROUP_PACK_CARD_HEIGHT = 125;
+const GROUP_PACK_CARD_PADDING = 14;
 
 export default function Canvas({
   offsetX,
@@ -10,10 +19,15 @@ export default function Canvas({
   setOffsetY,
   scale,
   setScale,
+  activeGroupBoardId,
+  onOpenGroupBoard,
+  onCloseGroupBoard,
+  isMobile = false,
 }) {
   const images = useBoardStore((state) => state.images);
+  const groupAnchorsMap = useBoardStore((state) => state.groupAnchors);
   const selectedImageIds = useBoardStore((state) => state.selectedImageIds);
-  const addImage = useBoardStore((state) => state.addimage);
+  const addImage = useBoardStore((state) => state.addImage);
   const updateMultipleImagePositions = useBoardStore(
     (state) => state.updateMultipleImagePositions,
   );
@@ -25,10 +39,15 @@ export default function Canvas({
   );
   const saveHistory = useBoardStore((state) => state.saveHistory);
   const undo = useBoardStore((state) => state.undo);
+  const redo = useBoardStore((state) => state.redo);
   const selectImages = useBoardStore((state) => state.selectImages);
   const clearSelection = useBoardStore((state) => state.clearSelection);
   const removeImages = useBoardStore((state) => state.removeImages);
   const duplicateImages = useBoardStore((state) => state.duplicateImages);
+  const groupImages = useBoardStore((state) => state.groupImages);
+  const ungroupImages = useBoardStore((state) => state.ungroupImages);
+  const updateGroupAnchor = useBoardStore((state) => state.updateGroupAnchor);
+  const persistBoard = useBoardStore((state) => state.persistBoard);
   const flipHorizontal = useBoardStore((state) => state.flipHorizontal);
   const flipVertical = useBoardStore((state) => state.flipVertical);
   const resetSize = useBoardStore((state) => state.resetSize);
@@ -42,6 +61,9 @@ export default function Canvas({
     y: 0,
     imageId: null,
   });
+  const [groupTargetId, setGroupTargetId] = useState(null);
+  const groupHoverTimerRef = useRef(null);
+  const groupHoverCandidateRef = useRef(null);
 
   // Touch handling refs
   const touchesRef = useRef([]);
@@ -98,7 +120,30 @@ export default function Canvas({
   const saveHistoryRef = useRef(saveHistory);
   const removeImagesRef = useRef(removeImages);
   const undoRef = useRef(undo);
+  const redoRef = useRef(redo);
   const imagesRef = useRef(images);
+  const visibleImages = activeGroupBoardId
+    ? images.filter((img) => img.groupId === activeGroupBoardId)
+    : images.filter((img) => !img.groupId);
+
+  const groupPacks = activeGroupBoardId
+    ? []
+    : Object.entries(groupAnchorsMap)
+        .map(([groupId, anchor]) => {
+          const groupImages = images.filter((img) => img.groupId === groupId);
+          if (!anchor || groupImages.length === 0) return null;
+
+          return {
+            groupId,
+            x: anchor.x,
+            y: anchor.y,
+            count: groupImages.length,
+            previewImages: groupImages.slice(0, 3),
+          };
+        })
+        .filter(Boolean);
+
+  const groupTarget = visibleImages.find((img) => img.id === groupTargetId);
 
   // Mettre à jour les refs quand les valeurs changent
   useEffect(() => {
@@ -106,8 +151,9 @@ export default function Canvas({
     saveHistoryRef.current = saveHistory;
     removeImagesRef.current = removeImages;
     undoRef.current = undo;
+    redoRef.current = redo;
     imagesRef.current = images;
-  }, [selectedImageIds, saveHistory, removeImages, undo, images]);
+  }, [selectedImageIds, saveHistory, removeImages, undo, redo, images]);
 
   // Boîte de sélection
   const selectionBoxRef = useRef({
@@ -129,10 +175,15 @@ export default function Canvas({
   const draggingRef = useRef({
     active: false,
     imageIds: [],
-    startX: 0,
-    startY: 0,
-    prevPositions: {},
+    startClientX: 0,
+    startClientY: 0,
+    autoPanOffsetX: 0,
+    autoPanOffsetY: 0,
   });
+
+  const imageNodeRefs = useRef(new Map());
+  const packNodeRefs = useRef(new Map());
+  const lastPointerRef = useRef({ clientX: 0, clientY: 0 });
 
   const resizingRef = useRef({
     active: false,
@@ -152,6 +203,16 @@ export default function Canvas({
     startRotation: 0,
     centerX: 0,
     centerY: 0,
+  });
+
+  const packDraggingRef = useRef({
+    active: false,
+    groupId: null,
+    startClientX: 0,
+    startClientY: 0,
+    startAnchorX: 0,
+    startAnchorY: 0,
+    moved: false,
   });
 
   const autoPanRef = useRef({
@@ -230,6 +291,7 @@ export default function Canvas({
             height: img.height * scaleImg,
             originalWidth: img.width,
             originalHeight: img.height,
+            groupId: activeGroupBoardId || undefined,
           });
         };
       };
@@ -238,7 +300,7 @@ export default function Canvas({
 
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
-  }, [addImage, saveHistory]);
+  }, [addImage, saveHistory, activeGroupBoardId]);
 
   // Ctrl+Z et gestion des touches
   useEffect(() => {
@@ -253,7 +315,16 @@ export default function Canvas({
 
       if ((e.ctrlKey || e.metaKey) && e.key === "z") {
         e.preventDefault();
-        undoRef.current();
+        if (e.shiftKey) {
+          redoRef.current();
+        } else {
+          undoRef.current();
+        }
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key === "y") {
+        e.preventDefault();
+        redoRef.current();
       }
 
       if (
@@ -296,6 +367,7 @@ export default function Canvas({
       if (
         selectionBoxRef.current.active ||
         draggingRef.current.active ||
+        packDraggingRef.current.active ||
         resizingRef.current.active ||
         rotatingRef.current.active ||
         panningRef.current.active
@@ -331,9 +403,108 @@ export default function Canvas({
     };
   };
 
-  const getImageIdAtPoint = (mouseX, mouseY) => {
-    for (let i = images.length - 1; i >= 0; i--) {
-      const img = images[i];
+  const getImageDragOffset = () => {
+    if (!draggingRef.current.active) {
+      return { x: 0, y: 0 };
+    }
+
+    const scale = scaleRef.current || 1;
+    return {
+      x:
+        (lastPointerRef.current.clientX - draggingRef.current.startClientX) /
+          scale +
+        draggingRef.current.autoPanOffsetX,
+      y:
+        (lastPointerRef.current.clientY - draggingRef.current.startClientY) /
+          scale +
+        draggingRef.current.autoPanOffsetY,
+    };
+  };
+
+  const applyImageDragVisual = () => {
+    const { x, y } = getImageDragOffset();
+
+    for (const id of draggingRef.current.imageIds) {
+      const el = imageNodeRefs.current.get(id);
+      const img = imagesRef.current.find((image) => image.id === id);
+      if (!el || !img) continue;
+
+      el.style.transform = `translate(${x}px, ${y}px) rotate(${img.rotation || 0}deg)`;
+      el.style.willChange = "transform";
+    }
+  };
+
+  const clearImageDragVisual = (imageIds) => {
+    for (const id of imageIds) {
+      const el = imageNodeRefs.current.get(id);
+      const img = imagesRef.current.find((image) => image.id === id);
+      if (!el) continue;
+
+      el.style.transform = `rotate(${img?.rotation || 0}deg)`;
+      el.style.willChange = "";
+    }
+  };
+
+  const getPackDragOffset = () => {
+    if (!packDraggingRef.current.active) {
+      return { x: 0, y: 0 };
+    }
+
+    const scale = scaleRef.current || 1;
+    return {
+      x: (lastPointerRef.current.clientX - packDraggingRef.current.startClientX) / scale,
+      y: (lastPointerRef.current.clientY - packDraggingRef.current.startClientY) / scale,
+    };
+  };
+
+  const applyPackDragVisual = () => {
+    const groupId = packDraggingRef.current.groupId;
+    if (!groupId) return;
+
+    const el = packNodeRefs.current.get(groupId);
+    if (!el) return;
+
+    const { x, y } = getPackDragOffset();
+    el.style.transform = `translate(${x}px, ${y}px)`;
+    el.style.willChange = "transform";
+  };
+
+  const clearPackDragVisual = (groupId) => {
+    if (!groupId) return;
+    const el = packNodeRefs.current.get(groupId);
+    if (!el) return;
+    el.style.transform = "";
+    el.style.willChange = "";
+  };
+
+  const getGroupPackAtPoint = (mouseX, mouseY) => {
+    if (activeGroupBoardId) return null;
+
+    for (const [groupId, anchor] of Object.entries(groupAnchorsMap)) {
+      const hasImages = images.some((img) => img.groupId === groupId);
+      if (!hasImages || !anchor) continue;
+
+      const packX = anchor.x - GROUP_PACK_BORDER;
+      const packY = anchor.y - GROUP_PACK_BORDER;
+      const packW = GROUP_PACK_WIDTH + GROUP_PACK_BORDER * 2;
+      const packH = GROUP_PACK_HEIGHT + GROUP_PACK_BORDER * 2;
+
+      if (
+        mouseX >= packX &&
+        mouseX <= packX + packW &&
+        mouseY >= packY &&
+        mouseY <= packY + packH
+      ) {
+        return groupId;
+      }
+    }
+
+    return null;
+  };
+
+  const getImageIdAtPoint = (mouseX, mouseY, sourceImages = visibleImages) => {
+    for (let i = sourceImages.length - 1; i >= 0; i--) {
+      const img = sourceImages[i];
       const local = getLocalPoint(mouseX, mouseY, img);
 
       if (
@@ -355,8 +526,8 @@ export default function Canvas({
     const mouseY =
       (clientY - rect.top - offsetRef.current.y) / scaleRef.current;
 
-    for (let i = images.length - 1; i >= 0; i--) {
-      const img = images[i];
+    for (let i = visibleImages.length - 1; i >= 0; i--) {
+      const img = visibleImages[i];
       const local = getLocalPoint(mouseX, mouseY, img);
 
       if (
@@ -377,6 +548,44 @@ export default function Canvas({
         break;
       }
     }
+  };
+
+  const clearGroupHoverTarget = () => {
+    if (groupHoverTimerRef.current) {
+      clearTimeout(groupHoverTimerRef.current);
+      groupHoverTimerRef.current = null;
+    }
+    groupHoverCandidateRef.current = null;
+    setGroupTargetId(null);
+  };
+
+  const setGroupHoverCandidate = (candidateId) => {
+    if (groupHoverCandidateRef.current === candidateId) return;
+    clearGroupHoverTarget();
+    if (!candidateId) return;
+
+    groupHoverCandidateRef.current = candidateId;
+    groupHoverTimerRef.current = window.setTimeout(() => {
+      setGroupTargetId(candidateId);
+      groupHoverTimerRef.current = null;
+    }, 600);
+  };
+
+  const getGroupCandidateAtPoint = (mouseX, mouseY, excludedIds) => {
+    for (let i = visibleImages.length - 1; i >= 0; i--) {
+      const img = visibleImages[i];
+      if (excludedIds.includes(img.id)) continue;
+      const local = getLocalPoint(mouseX, mouseY, img);
+      if (
+        local.x >= 0 &&
+        local.x <= img.width &&
+        local.y >= 0 &&
+        local.y <= img.height
+      ) {
+        return img.id;
+      }
+    }
+    return null;
   };
 
   const handleTouchStart = (e) => {
@@ -521,7 +730,12 @@ export default function Canvas({
           endedImageId === touchStartImageIdRef.current &&
           selectedImageIds.includes(endedImageId)
         ) {
-          openContextMenuAtPoint(touch.clientX, touch.clientY);
+          const endedImage = images.find((img) => img.id === endedImageId);
+          if (endedImage?.groupId) {
+            onOpenGroupBoard(endedImage.groupId);
+          } else {
+            openContextMenuAtPoint(touch.clientX, touch.clientY);
+          }
         }
         if (
           endedImageId === touchStartImageIdRef.current &&
@@ -549,16 +763,11 @@ export default function Canvas({
   // Calculer la taille optimale du handle en fonction du zoom du canvas
   // Les handles auront toujours la même taille visuelle peu importe le zoom ou la taille de l'image
   const getHandleSize = (currentScale) => {
-    // Taille de base des handles à zoom 1x (100%)
-    const baseHandleSize = 12; // pixels
+    const baseHandleSize = 12;
 
-    // Adapter à l'inverse du zoom pour que les handles restent visuellement constants
-    // À zoom 0.5x → handles 2x plus gros visiblement (24px) pour rester lisibles
-    // À zoom 2x → handles 0.5x (6px) car déjà gros visuellement
     let handleSize = baseHandleSize / currentScale;
 
-    // Mobile : augmenter la base de 50% pour meilleur tactile
-    if (window.innerWidth < 768) {
+    if (isMobile) {
       handleSize = handleSize * 1.5;
       handleSize = Math.max(handleSize, 12); // Min 12px sur mobile
       handleSize = Math.min(handleSize, 36); // Max 36px sur mobile
@@ -628,6 +837,29 @@ export default function Canvas({
       (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
     const mouseY =
       (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
+    const packGroupId =
+      e.button === 0 && !activeGroupBoardId
+        ? getGroupPackAtPoint(mouseX, mouseY)
+        : null;
+
+    if (packGroupId) {
+      const anchor = groupAnchorsMap[packGroupId];
+      if (anchor) {
+        saveHistory();
+        packDraggingRef.current = {
+          active: true,
+          groupId: packGroupId,
+          startClientX: e.clientX,
+          startClientY: e.clientY,
+          startAnchorX: anchor.x,
+          startAnchorY: anchor.y,
+          moved: false,
+        };
+        lastPointerRef.current = { clientX: e.clientX, clientY: e.clientY };
+        applyPackDragVisual();
+      }
+      return;
+    }
 
     // espace + clic gauche déclenche le panoramique
     if (e.button === 0 && spacePressedRef.current) {
@@ -682,8 +914,8 @@ export default function Canvas({
 
       // Vérifier clic sur image
       let clickedImageId = null;
-      for (let i = images.length - 1; i >= 0; i--) {
-        const img = images[i];
+      for (let i = visibleImages.length - 1; i >= 0; i--) {
+        const img = visibleImages[i];
         const local = getLocalPoint(mouseX, mouseY, img);
 
         if (
@@ -698,22 +930,23 @@ export default function Canvas({
       }
 
       if (clickedImageId) {
-        // Drag images
-        if (!selectedImageIds.includes(clickedImageId) && !e.skipSelection)
-          selectImages([clickedImageId]);
-        saveHistory();
-        draggingRef.current.active = true;
-        draggingRef.current.imageIds = selectedImageIds.includes(clickedImageId)
+        let imageIdsToDrag = selectedImageIds.includes(clickedImageId)
           ? [...selectedImageIds]
           : [clickedImageId];
-        draggingRef.current.startX = e.clientX;
-        draggingRef.current.startY = e.clientY;
-        draggingRef.current.prevPositions = {};
-        draggingRef.current.imageIds.forEach((id) => {
-          const img = images.find((i) => i.id === id);
-          if (img)
-            draggingRef.current.prevPositions[id] = { x: img.x, y: img.y };
-        });
+
+        if (!selectedImageIds.includes(clickedImageId) && !e.skipSelection) {
+          selectImages([clickedImageId]);
+        }
+
+        saveHistory();
+        draggingRef.current.active = true;
+        draggingRef.current.imageIds = imageIdsToDrag;
+        draggingRef.current.startClientX = e.clientX;
+        draggingRef.current.startClientY = e.clientY;
+        draggingRef.current.autoPanOffsetX = 0;
+        draggingRef.current.autoPanOffsetY = 0;
+        lastPointerRef.current = { clientX: e.clientX, clientY: e.clientY };
+        applyImageDragVisual();
       } else {
         // Boîte de sélection
         selectionBoxRef.current.active = true;
@@ -727,10 +960,14 @@ export default function Canvas({
 
     // Clic droit
     if (e.button === 2) {
+      if (!activeGroupBoardId && getGroupPackAtPoint(mouseX, mouseY)) {
+        return;
+      }
+
       // Vérifier si clic sur image
       let clickedImageId = null;
-      for (let i = images.length - 1; i >= 0; i--) {
-        const img = images[i];
+      for (let i = visibleImages.length - 1; i >= 0; i--) {
+        const img = visibleImages[i];
         const local = getLocalPoint(mouseX, mouseY, img);
 
         if (
@@ -789,7 +1026,23 @@ export default function Canvas({
   };
 
   const handleMouseMove = (e) => {
+    lastPointerRef.current = { clientX: e.clientX, clientY: e.clientY };
+
     const rect = containerRef.current.getBoundingClientRect();
+    const mouseX =
+      (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
+    const mouseY =
+      (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
+
+    if (packDraggingRef.current.active) {
+      const screenDeltaX = e.clientX - packDraggingRef.current.startClientX;
+      const screenDeltaY = e.clientY - packDraggingRef.current.startClientY;
+      if (Math.hypot(screenDeltaX, screenDeltaY) > 5) {
+        packDraggingRef.current.moved = true;
+      }
+      applyPackDragVisual();
+      return;
+    }
 
     /* =========================
       AUTO PAN DETECTION
@@ -846,7 +1099,9 @@ export default function Canvas({
       const newRotation =
         (rotatingRef.current.startRotation + deltaAngle) % 360;
 
-      updateImageRotation(rotatingRef.current.imageId, newRotation);
+      updateImageRotation(rotatingRef.current.imageId, newRotation, {
+        persist: false,
+      });
       return;
     }
 
@@ -963,6 +1218,7 @@ export default function Canvas({
         newY,
         newWidth,
         newHeight,
+        { persist: false },
       );
       return;
     }
@@ -989,7 +1245,7 @@ export default function Canvas({
       const maxX = Math.max(selectionBoxRef.current.startX, mouseX);
       const maxY = Math.max(selectionBoxRef.current.startY, mouseY);
 
-      const selectedIds = images
+      const selectedIds = visibleImages
         .filter(
           (img) =>
             img.x + img.width > minX &&
@@ -1005,17 +1261,13 @@ export default function Canvas({
 
     // Drag images
     if (draggingRef.current.active) {
-      const deltaX =
-        (e.clientX - draggingRef.current.startX) / scaleRef.current;
-      const deltaY =
-        (e.clientY - draggingRef.current.startY) / scaleRef.current;
-      updateMultipleImagePositions(
+      const dragCandidateId = getGroupCandidateAtPoint(
+        mouseX,
+        mouseY,
         draggingRef.current.imageIds,
-        deltaX,
-        deltaY,
       );
-      draggingRef.current.startX = e.clientX;
-      draggingRef.current.startY = e.clientY;
+      setGroupHoverCandidate(dragCandidateId);
+      applyImageDragVisual();
       return;
     }
 
@@ -1029,6 +1281,12 @@ export default function Canvas({
   };
 
   const handleMouseUp = () => {
+    const wasPackDragging = packDraggingRef.current.active;
+    const wasDraggingImages = draggingRef.current.active;
+    const wasResizing = resizingRef.current.active;
+    const wasRotating = rotatingRef.current.active;
+    const needsPersist = wasResizing || wasRotating;
+
     panningRef.current.active = false;
     setIsPanning(false);
     if (containerRef.current) {
@@ -1037,10 +1295,44 @@ export default function Canvas({
         ? "grab"
         : "default";
     }
+
+    const draggedImageIds = [...draggingRef.current.imageIds];
+    const packGroupId = packDraggingRef.current.groupId;
+
+    if (wasPackDragging) {
+      const { moved, startAnchorX, startAnchorY } = packDraggingRef.current;
+      const { x, y } = getPackDragOffset();
+      packDraggingRef.current.active = false;
+      clearPackDragVisual(packGroupId);
+      if (packGroupId && (x !== 0 || y !== 0)) {
+        updateGroupAnchor(packGroupId, startAnchorX + x, startAnchorY + y);
+      } else if (packGroupId && !moved) {
+        onOpenGroupBoard(packGroupId);
+      }
+    }
+
+    if (wasDraggingImages) {
+      const { x, y } = getImageDragOffset();
+      clearImageDragVisual(draggedImageIds);
+      if (x !== 0 || y !== 0) {
+        updateMultipleImagePositions(draggedImageIds, x, y);
+      }
+    }
+
+    if (wasDraggingImages && groupTargetId) {
+      saveHistory();
+      groupImages(draggedImageIds, groupTargetId);
+    }
+
+    clearGroupHoverTarget();
     draggingRef.current.active = false;
     resizingRef.current.active = false;
     rotatingRef.current.active = false;
     stopAutoPan();
+
+    if (needsPersist) {
+      persistBoard();
+    }
     if (selectionBoxRef.current.active) {
       const { startX, startY, currentX, currentY } = selectionBoxRef.current;
 
@@ -1049,7 +1341,7 @@ export default function Canvas({
       const maxX = Math.max(startX, currentX);
       const maxY = Math.max(startY, currentY);
 
-      const selectedIds = images
+      const selectedIds = visibleImages
         .filter(
           (img) =>
             img.x + img.width > minX &&
@@ -1085,13 +1377,11 @@ export default function Canvas({
       setOffsetX((prev) => prev + moveX);
       setOffsetY((prev) => prev + moveY);
 
-      // 2️⃣ si drag actif → compenser UNIQUEMENT les images
+      // 2️⃣ si drag actif → compenser visuellement (auto-pan)
       if (draggingRef.current.active) {
-        updateMultipleImagePositions(
-          draggingRef.current.imageIds,
-          -moveX / scaleRef.current,
-          -moveY / scaleRef.current,
-        );
+        draggingRef.current.autoPanOffsetX -= moveX / scaleRef.current;
+        draggingRef.current.autoPanOffsetY -= moveY / scaleRef.current;
+        applyImageDragVisual();
       }
 
       autoPanRef.current.rafId = requestAnimationFrame(step);
@@ -1118,22 +1408,24 @@ export default function Canvas({
     );
     if (dragDistance > 5) return;
     if (e.target.closest(".toolbar")) return;
-
-    // Si clic sur image, ne rien faire
     const rect = containerRef.current.getBoundingClientRect();
     const mouseX =
       (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
     const mouseY =
       (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
-    for (let i = images.length - 1; i >= 0; i--) {
-      const img = images[i];
+
+    for (let i = visibleImages.length - 1; i >= 0; i--) {
+      const img = visibleImages[i];
+      const local = getLocalPoint(mouseX, mouseY, img);
+
       if (
-        mouseX >= img.x &&
-        mouseX <= img.x + img.width &&
-        mouseY >= img.y &&
-        mouseY <= img.y + img.height
-      )
+        local.x >= 0 &&
+        local.x <= img.width &&
+        local.y >= 0 &&
+        local.y <= img.height
+      ) {
         return;
+      }
     }
 
     clearSelection();
@@ -1231,6 +1523,7 @@ export default function Canvas({
             height: img.height * scaleImg,
             originalWidth: img.width,
             originalHeight: img.height,
+            groupId: activeGroupBoardId || undefined,
           });
         };
       };
@@ -1252,6 +1545,7 @@ export default function Canvas({
             height: img.height * scaleImg,
             originalWidth: img.width,
             originalHeight: img.height,
+            groupId: activeGroupBoardId || undefined,
           });
         };
         img.src = url;
@@ -1315,10 +1609,79 @@ export default function Canvas({
           />
         )}
 
+        {!activeGroupBoardId &&
+          groupPacks.map((group) => {
+            const packWidth = GROUP_PACK_WIDTH + GROUP_PACK_BORDER * 2;
+            const packHeight = GROUP_PACK_HEIGHT + GROUP_PACK_BORDER * 2;
+            const baseTop = Math.max(
+              (packHeight - GROUP_PACK_CARD_HEIGHT) / 2,
+              GROUP_PACK_CARD_PADDING,
+            );
+            const baseLeft = Math.max(
+              (packWidth - GROUP_PACK_CARD_WIDTH) / 2,
+              GROUP_PACK_CARD_PADDING,
+            );
+
+            return (
+              <div
+                key={group.groupId}
+                ref={(el) => {
+                  if (el) packNodeRefs.current.set(group.groupId, el);
+                  else packNodeRefs.current.delete(group.groupId);
+                }}
+                data-group-pack
+                className="absolute rounded-3xl border-2 border-white/10 bg-slate-950/20 shadow-2xl shadow-slate-950/20 cursor-grab active:cursor-grabbing"
+                style={{
+                  top: group.y - GROUP_PACK_BORDER,
+                  left: group.x - GROUP_PACK_BORDER,
+                  width: packWidth,
+                  height: packHeight,
+                  zIndex: 900,
+                }}
+              >
+                <div className="pointer-events-none absolute inset-0 select-none">
+                  {group.previewImages.map((img, index) => {
+                    const cardOffset =
+                      (group.previewImages.length - 1 - index) * 10;
+                    const cardRotate = index === 0 ? -8 : index === 1 ? 6 : -3;
+                    return (
+                      <div
+                        key={img.id}
+                        data-group-pack-preview
+                        aria-hidden
+                        className="absolute overflow-hidden rounded-3xl border border-white/10 bg-slate-950 shadow-xl"
+                        style={{
+                          width: GROUP_PACK_CARD_WIDTH,
+                          height: GROUP_PACK_CARD_HEIGHT,
+                          top: baseTop + cardOffset,
+                          left: baseLeft + cardOffset,
+                          zIndex: 10 + index,
+                          transform: `rotate(${cardRotate}deg)`,
+                        }}
+                      >
+                        <img
+                          src={img.url}
+                          alt=""
+                          draggable={false}
+                          className="h-full w-full object-cover pointer-events-none select-none"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+
         {/* Images */}
-        {images.map((img, index) => (
+        {visibleImages.map((img, index) => (
           <div
             key={img.id}
+            ref={(el) => {
+              if (el) imageNodeRefs.current.set(img.id, el);
+              else imageNodeRefs.current.delete(img.id);
+            }}
+            data-image-id={img.id}
             style={{
               position: "absolute",
               top: img.y,
@@ -1334,7 +1697,7 @@ export default function Canvas({
               src={img.url}
               alt=""
               draggable="false"
-              className={`absolute w-full h-full pointer-events-auto cursor-grab active:cursor-grabbing ${
+              className={`absolute w-full h-full pointer-events-auto cursor-pointer ${
                 selectedImageIds.includes(img.id) ? "ring-2 ring-blue-500" : ""
               }`}
               style={{
@@ -1342,6 +1705,11 @@ export default function Canvas({
                 transformOrigin: "center center",
               }}
             />
+            {img.groupId && (
+              <div className="absolute top-2 right-2 h-6 w-6 rounded-full bg-sky-500/90 text-[10px] text-white font-semibold flex items-center justify-center pointer-events-none shadow-md shadow-slate-950/30">
+                G
+              </div>
+            )}
 
             {/* Poignées de redimensionnement */}
             {selectedImageIds.includes(img.id) &&
@@ -1465,6 +1833,7 @@ export default function Canvas({
                     >
                       <line
                         x1="50%"
+                        y1="0"
                         x2="50%"
                         y2="-50"
                         stroke="#3b82f6"
@@ -1489,11 +1858,56 @@ export default function Canvas({
               })()}
           </div>
         ))}
+        {groupTarget && (
+          <>
+            <div
+              className="absolute pointer-events-none rounded-3xl border-4 border-lime-400/80 bg-lime-400/15"
+              style={{
+                top: groupTarget.y,
+                left: groupTarget.x,
+                width: groupTarget.width,
+                height: groupTarget.height,
+              }}
+            />
+            <div
+              className="absolute pointer-events-none rounded-full bg-lime-500/90 text-[10px] text-slate-950 font-semibold px-2 py-1"
+              style={{
+                top: Math.max(groupTarget.y - 26, 0),
+                left: groupTarget.x,
+              }}
+            >
+              Relâchez pour grouper
+            </div>
+          </>
+        )}
       </div>
 
       {/* Overlay pour le menu contextuel */}
       {contextMenu.visible && (
         <div className="fixed inset-0 z-[2999]" onClick={closeContextMenu} />
+      )}
+
+      {activeGroupBoardId && (
+        <div className="fixed left-4 top-4 z-[3010] rounded-3xl border border-white/10 bg-slate-950/95 px-4 py-3 shadow-2xl shadow-black/40 backdrop-blur-xl text-white flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onCloseGroupBoard}
+              className="rounded-full border border-white/10 bg-white/10 px-3 py-2 text-sm font-semibold hover:bg-white/15"
+            >
+              Retour
+            </button>
+            <div className="text-sm">Board de groupe</div>
+          </div>
+          <button
+            onClick={() => {
+              ungroupImages(activeGroupBoardId);
+              onCloseGroupBoard();
+            }}
+            className="rounded-full border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-200 hover:bg-rose-500/20"
+          >
+            Dissocier
+          </button>
+        </div>
       )}
 
       {/* Menu contextuel */}

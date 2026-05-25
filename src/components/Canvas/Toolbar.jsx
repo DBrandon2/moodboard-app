@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { useBoardStore } from "../../store/boardStore";
+import { STORAGE_KEY, useBoardStore } from "../../store/boardStore";
 import {
   FiCompass,
   FiPlus,
@@ -19,7 +19,9 @@ export default function Toolbar({
   onRecenter,
   offsetX = 0,
   offsetY = 0,
+  canvasScale = 1,
   isMobile: isMobileFromProps = null,
+  activeGroupBoardId = null,
 }) {
   const [url, setUrl] = useState("");
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -28,7 +30,7 @@ export default function Toolbar({
   const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
   const fileInputRef = useRef(null);
   const importInputRef = useRef(null);
-  const addImage = useBoardStore((state) => state.addimage);
+  const addImage = useBoardStore((state) => state.addImage);
   const clearStorage = useBoardStore((state) => state.clearStorage);
   const loadFromImport = useBoardStore((state) => state.loadFromImport);
   const images = useBoardStore((state) => state.images);
@@ -63,22 +65,23 @@ export default function Toolbar({
 
     img.onload = () => {
       const maxWidth = 200;
-      const scale = maxWidth / img.width;
+      const imageScale = maxWidth / img.width;
 
       const width = maxWidth;
-      const height = img.height * scale;
+      const height = img.height * imageScale;
 
-      const screenCenterX = window.innerWidth / 2;
-      const screenCenterY = window.innerHeight / 2;
+      const centerX = (window.innerWidth / 2 - offsetX) / canvasScale;
+      const centerY = (window.innerHeight / 2 - offsetY) / canvasScale;
 
       addImage({
         url,
-        x: screenCenterX - offsetX - width / 2,
-        y: screenCenterY - offsetY - height / 2,
+        x: centerX - width / 2,
+        y: centerY - height / 2,
         width,
         height,
         originalWidth: img.width,
         originalHeight: img.height,
+        groupId: activeGroupBoardId || undefined,
       });
       setUrl("");
       setAddMenuOpen(false);
@@ -103,8 +106,7 @@ export default function Toolbar({
   const toolbarBgClass = "bg-slate-950/35";
 
   const handleDownloadData = () => {
-    const storageKey = "moodboard_state";
-    const stored = localStorage.getItem(storageKey);
+    const stored = localStorage.getItem(STORAGE_KEY);
     if (!stored) {
       alert("Aucune donnée à télécharger");
       return;
@@ -175,7 +177,7 @@ export default function Toolbar({
   return (
     <>
       <div
-        className={`fixed z-50 pointer-events-none ${isMobile ? "inset-x-0 bottom-0 flex flex-col items-center" : "top-1/2 left-0 -translate-y-1/2 flex items-center"}`}
+        className={`toolbar fixed z-50 pointer-events-none ${isMobile ? "inset-x-0 bottom-0 flex flex-col items-center" : "top-1/2 left-0 -translate-y-1/2 flex items-center"}`}
       >
         {!isMobile && (
           <div className="pointer-events-auto flex items-center transition-all duration-300 ease-out">
@@ -431,20 +433,21 @@ export default function Toolbar({
                     img.src = reader.result;
                     img.onload = () => {
                       const maxWidth = 200;
-                      const scale = maxWidth / img.width;
+                      const imageScale = maxWidth / img.width;
                       const width = maxWidth;
-                      const height = img.height * scale;
-                      const screenCenterX = window.innerWidth / 2;
-                      const screenCenterY = window.innerHeight / 2;
+                      const height = img.height * imageScale;
+                      const centerX = (window.innerWidth / 2 - offsetX) / canvasScale;
+                      const centerY = (window.innerHeight / 2 - offsetY) / canvasScale;
 
                       addImage({
                         url: reader.result,
-                        x: screenCenterX - offsetX - width / 2,
-                        y: screenCenterY - offsetY - height / 2,
+                        x: centerX - width / 2,
+                        y: centerY - height / 2,
                         width,
                         height,
                         originalWidth: img.width,
                         originalHeight: img.height,
+                        groupId: activeGroupBoardId || undefined,
                       });
                       setAddMenuOpen(false);
                     };
@@ -457,6 +460,15 @@ export default function Toolbar({
           </>,
           document.body,
         )}
+
+      {/* Input hidden pour importer une sauvegarde */}
+      <input
+        type="file"
+        ref={importInputRef}
+        className="hidden"
+        accept=".json"
+        onChange={handleImportFile}
+      />
     </>
   );
 }

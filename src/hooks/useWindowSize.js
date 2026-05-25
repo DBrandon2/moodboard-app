@@ -45,7 +45,7 @@ export const useWindowSize = () => {
     const mediaQuery768 = window.matchMedia("(max-width: 767px)");
     const mediaQueryCoarse = window.matchMedia("(pointer: coarse)"); // Touch device fallback
 
-    const handleMediaChange = (e) => {
+    const handleMediaChange = () => {
       // Always use innerWidth as source of truth - don't rely on e.matches for coarse
       const isMobileState = window.innerWidth < 768;
 
@@ -77,11 +77,10 @@ export const useWindowSize = () => {
 
     // Also trigger immediate check of media queries on mount
     const initialCheck = () => {
-      const isMobile = mediaQuery768.matches;
       setWindowSize({
         width: window.innerWidth,
         height: window.innerHeight,
-        isMobile,
+        isMobile: window.innerWidth < 768,
       });
     };
     initialCheck();
