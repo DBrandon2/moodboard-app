@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { STORAGE_KEY, useBoardStore } from "../../store/boardStore";
+import { compressImageDataUrl } from "../../utils/imageCompression";
+import { getDimensionsFromImageSource } from "../../utils/imageDimensions";
+import { canAddImage, getStorageInfo } from "../../utils/storageCheck";
 import {
   FiCompass,
   FiPlus,
@@ -9,6 +12,7 @@ import {
   FiTrash2,
   FiDownload,
   FiUploadCloud,
+  FiInfo,
   FiChevronLeft,
   FiChevronRight,
   FiChevronUp,
@@ -21,12 +25,13 @@ export default function Toolbar({
   offsetY = 0,
   canvasScale = 1,
   isMobile: isMobileFromProps = null,
-  activeGroupBoardId = null,
 }) {
   const [url, setUrl] = useState("");
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [isMobileLocal, setIsMobileLocal] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [storageFullAlert, setStorageFullAlert] = useState(false);
+  const [showStorageInfo, setShowStorageInfo] = useState(false);
   const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
   const fileInputRef = useRef(null);
   const importInputRef = useRef(null);
@@ -34,6 +39,7 @@ export default function Toolbar({
   const clearStorage = useBoardStore((state) => state.clearStorage);
   const loadFromImport = useBoardStore((state) => state.loadFromImport);
   const images = useBoardStore((state) => state.images);
+  const storageInfo = getStorageInfo();
 
   // Si isMobile est passé en prop, l'utiliser directement, sinon détecter localement
   const isMobile =
@@ -57,35 +63,33 @@ export default function Toolbar({
     }
   }, [isMobileFromProps]);
 
-  const handleAddImage = () => {
+  const handleAddImage = async () => {
     if (!url) return;
 
-    const img = new Image();
-    img.src = url;
-
-    img.onload = () => {
-      const maxWidth = 200;
-      const imageScale = maxWidth / img.width;
-
-      const width = maxWidth;
-      const height = img.height * imageScale;
-
+    try {
+      const dimensions = await getDimensionsFromImageSource(url);
       const centerX = (window.innerWidth / 2 - offsetX) / canvasScale;
       const centerY = (window.innerHeight / 2 - offsetY) / canvasScale;
 
+      if (!canAddImage(url)) {
+        setStorageFullAlert(true);
+        return;
+      }
+
       addImage({
         url,
-        x: centerX - width / 2,
-        y: centerY - height / 2,
-        width,
-        height,
-        originalWidth: img.width,
-        originalHeight: img.height,
-        groupId: activeGroupBoardId || undefined,
+        x: centerX - dimensions.width / 2,
+        y: centerY - dimensions.height / 2,
+        width: dimensions.width,
+        height: dimensions.height,
+        originalWidth: dimensions.originalWidth,
+        originalHeight: dimensions.originalHeight,
       });
       setUrl("");
       setAddMenuOpen(false);
-    };
+    } catch (error) {
+      console.error("Impossible de charger l'image depuis l'URL :", error);
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -95,6 +99,13 @@ export default function Toolbar({
   const handleClearStorage = () => {
     clearStorage();
     setShowClearConfirm(false);
+  };
+
+  const formatBytes = (bytes) => {
+    if (bytes === 0) return "0 B";
+    const units = ["B", "KB", "MB", "GB"];
+    const index = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / 1024 ** index).toFixed(1)} ${units[index]}`;
   };
 
   const toolbarButtonClasses =
@@ -218,6 +229,14 @@ export default function Toolbar({
                   </button>
 
                   <button
+                    onClick={() => setShowStorageInfo(true)}
+                    className={toolbarButtonClasses}
+                    title="Voir l'état du stockage"
+                  >
+                    <FiInfo />
+                  </button>
+
+                  <button
                     onClick={() => importInputRef.current?.click()}
                     className={toolbarButtonClasses}
                     title="Importer une sauvegarde"
@@ -297,6 +316,14 @@ export default function Toolbar({
                   title="Télécharger la sauvegarde"
                 >
                   <FiDownload />
+                </button>
+
+                <button
+                  onClick={() => setShowStorageInfo(true)}
+                  className={toolbarButtonClasses}
+                  title="Voir l'état du stockage"
+                >
+                  <FiInfo />
                 </button>
 
                 <button
@@ -428,29 +455,37 @@ export default function Toolbar({
                   const file = e.target.files && e.target.files[0];
                   if (!file || !file.type.startsWith("image/")) return;
                   const reader = new FileReader();
-                  reader.onload = () => {
-                    const img = new Image();
-                    img.src = reader.result;
-                    img.onload = () => {
-                      const maxWidth = 200;
-                      const imageScale = maxWidth / img.width;
-                      const width = maxWidth;
-                      const height = img.height * imageScale;
-                      const centerX = (window.innerWidth / 2 - offsetX) / canvasScale;
-                      const centerY = (window.innerHeight / 2 - offsetY) / canvasScale;
+                  reader.onload = async () => {
+                    try {
+                      const compressed = await compressImageDataUrl(
+                        reader.result,
+                      );
+                      const centerX =
+                        (window.innerWidth / 2 - offsetX) / canvasScale;
+                      const centerY =
+                        (window.innerHeight / 2 - offsetY) / canvasScale;
+
+                      if (!canAddImage(compressed.url)) {
+                        setStorageFullAlert(true);
+                        return;
+                      }
 
                       addImage({
-                        url: reader.result,
-                        x: centerX - width / 2,
-                        y: centerY - height / 2,
-                        width,
-                        height,
-                        originalWidth: img.width,
-                        originalHeight: img.height,
-                        groupId: activeGroupBoardId || undefined,
+                        url: compressed.url,
+                        x: centerX - compressed.width / 2,
+                        y: centerY - compressed.height / 2,
+                        width: compressed.width,
+                        height: compressed.height,
+                        originalWidth: compressed.originalWidth,
+                        originalHeight: compressed.originalHeight,
                       });
                       setAddMenuOpen(false);
-                    };
+                    } catch (error) {
+                      console.error(
+                        "Échec de la compression de l'image importée :",
+                        error,
+                      );
+                    }
                   };
                   reader.readAsDataURL(file);
                   e.target.value = "";
@@ -469,6 +504,113 @@ export default function Toolbar({
         accept=".json"
         onChange={handleImportFile}
       />
+
+      {/* Popup d'alerte - Stockage plein */}
+      {storageFullAlert &&
+        createPortal(
+          <>
+            <div
+              className="fixed inset-0 bg-black/50 z-[4000]"
+              onClick={() => setStorageFullAlert(false)}
+            />
+            <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[4001] bg-slate-950 border border-red-500/30 rounded-2xl p-6 shadow-2xl max-w-md">
+              <h2 className="text-xl font-bold text-white mb-3">
+                Stockage plein ⚠️
+              </h2>
+              <p className="text-gray-300 mb-6">
+                Vous avez atteint la limite de stockage. Impossible d'ajouter
+                plus d'images.
+              </p>
+              <p className="text-gray-400 text-sm mb-6">
+                💡 Conseil: Supprimez des images ou videz le moodboard pour
+                libérer de l'espace.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setStorageFullAlert(false)}
+                  className="flex-1 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-semibold transition-colors"
+                >
+                  Fermer
+                </button>
+              </div>
+            </div>
+          </>,
+          document.body,
+        )}
+
+      {/* Modal d'information sur le stockage */}
+      {showStorageInfo &&
+        createPortal(
+          <>
+            <div
+              className="fixed inset-0 bg-black/50 z-40"
+              onClick={() => setShowStorageInfo(false)}
+            />
+            <div className="fixed top-1/2 left-1/2 z-50 w-[90vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl bg-slate-950/95 border border-white/10 p-6 shadow-2xl">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-xl font-semibold text-white">
+                    Statut du stockage
+                  </h3>
+                  <p className="mt-2 text-sm text-slate-400">
+                    Poids utilisé et quota maximal du moodboard.
+                  </p>
+                </div>
+                <button
+                  className="text-slate-300 text-xl hover:text-white"
+                  onClick={() => setShowStorageInfo(false)}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="mt-6 space-y-4">
+                <div className="rounded-2xl bg-slate-900/80 p-4 border border-white/10">
+                  <div className="flex justify-between text-sm text-slate-400 mb-2">
+                    <span>Utilisé</span>
+                    <span>{formatBytes(storageInfo.used)}</span>
+                  </div>
+                  <div className="h-3 rounded-full bg-white/10 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-sky-500"
+                      style={{
+                        width: `${Math.min(storageInfo.percentage, 100)}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 text-sm text-slate-300">
+                  <div className="rounded-2xl bg-slate-900/80 p-4 border border-white/10">
+                    <div className="text-slate-400">Quota max</div>
+                    <div className="mt-2 text-lg font-semibold text-white">
+                      {formatBytes(5 * 1024 * 1024)}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl bg-slate-900/80 p-4 border border-white/10">
+                    <div className="text-slate-400">Pourcentage</div>
+                    <div className="mt-2 text-lg font-semibold text-white">
+                      {storageInfo.percentage.toFixed(1)}%
+                    </div>
+                  </div>
+                </div>
+
+                {storageInfo.nearQuota && (
+                  <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+                    Vous êtes proche du quota. Supprimez des images si
+                    nécessaire.
+                  </div>
+                )}
+                {storageInfo.quotaExceeded && (
+                  <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-100">
+                    Le quota est dépassé, certaines actions peuvent échouer.
+                  </div>
+                )}
+              </div>
+            </div>
+          </>,
+          document.body,
+        )}
     </>
   );
 }

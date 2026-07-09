@@ -1,16 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useBoardStore } from "../../store/boardStore";
-import {
-  GROUP_PACK_BORDER,
-  GROUP_PACK_HEIGHT,
-  GROUP_PACK_WIDTH,
-} from "../../constants/groupPack";
-import { FiCopy, FiTrash } from "react-icons/fi";
+import { compressImageDataUrl } from "../../utils/imageCompression";
+import { getDimensionsFromImageSource } from "../../utils/imageDimensions";
+import { canAddImage, getStorageInfo } from "../../utils/storageCheck";
+import { FiCopy, FiTrash, FiInfo } from "react-icons/fi";
 import { RiFlipHorizontalLine, RiFlipVerticalLine } from "react-icons/ri";
-
-const GROUP_PACK_CARD_WIDTH = 100;
-const GROUP_PACK_CARD_HEIGHT = 125;
-const GROUP_PACK_CARD_PADDING = 14;
 
 export default function Canvas({
   offsetX,
@@ -19,13 +14,9 @@ export default function Canvas({
   setOffsetY,
   scale,
   setScale,
-  activeGroupBoardId,
-  onOpenGroupBoard,
-  onCloseGroupBoard,
   isMobile = false,
 }) {
   const images = useBoardStore((state) => state.images);
-  const groupAnchorsMap = useBoardStore((state) => state.groupAnchors);
   const selectedImageIds = useBoardStore((state) => state.selectedImageIds);
   const addImage = useBoardStore((state) => state.addImage);
   const updateMultipleImagePositions = useBoardStore(
@@ -44,9 +35,6 @@ export default function Canvas({
   const clearSelection = useBoardStore((state) => state.clearSelection);
   const removeImages = useBoardStore((state) => state.removeImages);
   const duplicateImages = useBoardStore((state) => state.duplicateImages);
-  const groupImages = useBoardStore((state) => state.groupImages);
-  const ungroupImages = useBoardStore((state) => state.ungroupImages);
-  const updateGroupAnchor = useBoardStore((state) => state.updateGroupAnchor);
   const persistBoard = useBoardStore((state) => state.persistBoard);
   const flipHorizontal = useBoardStore((state) => state.flipHorizontal);
   const flipVertical = useBoardStore((state) => state.flipVertical);
@@ -55,15 +43,16 @@ export default function Canvas({
   const [isPanning, setIsPanning] = useState(false);
   const spacePressedRef = useRef(false);
 
+  const [storageFullAlert, setStorageFullAlert] = useState(false);
+
   const [contextMenu, setContextMenu] = useState({
     visible: false,
     x: 0,
     y: 0,
     imageId: null,
   });
-  const [groupTargetId, setGroupTargetId] = useState(null);
-  const groupHoverTimerRef = useRef(null);
-  const groupHoverCandidateRef = useRef(null);
+  const [showImageInfo, setShowImageInfo] = useState(false);
+  const [imageInfo, setImageInfo] = useState(null);
 
   // Touch handling refs
   const touchesRef = useRef([]);
@@ -79,6 +68,39 @@ export default function Canvas({
 
   const closeContextMenu = () => {
     setContextMenu({ visible: false, x: 0, y: 0, imageId: null });
+  };
+
+  const formatBytes = (bytes) => {
+    if (!bytes && bytes !== 0) return "-";
+    if (bytes === 0) return "0 B";
+    const units = ["B", "KB", "MB", "GB"];
+    const index = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / 1024 ** index).toFixed(1)} ${units[index]}`;
+  };
+
+  const handleShowImageInfo = (imageId) => {
+    const img = images.find((i) => i.id === imageId);
+    if (!img) return;
+
+    try {
+      const bytes = new Blob([img.url]).size;
+      const storage = getStorageInfo();
+      const used = storage.used || 0;
+      const percentOfBoard = used > 0 ? (bytes / used) * 100 : 0;
+      const percentOfQuota = storage.quotaExceeded ? 100 : storage.percentage;
+
+      setImageInfo({
+        id: imageId,
+        bytes,
+        percentOfBoard,
+        percentOfQuota,
+        src: img.url,
+      });
+      setShowImageInfo(true);
+      closeContextMenu();
+    } catch (err) {
+      console.error("Erreur calcul taille image:", err);
+    }
   };
 
   // Fermer le menu contextuel si clic en dehors
@@ -122,28 +144,7 @@ export default function Canvas({
   const undoRef = useRef(undo);
   const redoRef = useRef(redo);
   const imagesRef = useRef(images);
-  const visibleImages = activeGroupBoardId
-    ? images.filter((img) => img.groupId === activeGroupBoardId)
-    : images.filter((img) => !img.groupId);
-
-  const groupPacks = activeGroupBoardId
-    ? []
-    : Object.entries(groupAnchorsMap)
-        .map(([groupId, anchor]) => {
-          const groupImages = images.filter((img) => img.groupId === groupId);
-          if (!anchor || groupImages.length === 0) return null;
-
-          return {
-            groupId,
-            x: anchor.x,
-            y: anchor.y,
-            count: groupImages.length,
-            previewImages: groupImages.slice(0, 3),
-          };
-        })
-        .filter(Boolean);
-
-  const groupTarget = visibleImages.find((img) => img.id === groupTargetId);
+  const pasteImageRef = useRef(null);
 
   // Mettre à jour les refs quand les valeurs changent
   useEffect(() => {
@@ -182,7 +183,6 @@ export default function Canvas({
   });
 
   const imageNodeRefs = useRef(new Map());
-  const packNodeRefs = useRef(new Map());
   const lastPointerRef = useRef({ clientX: 0, clientY: 0 });
 
   const resizingRef = useRef({
@@ -205,16 +205,6 @@ export default function Canvas({
     centerY: 0,
   });
 
-  const packDraggingRef = useRef({
-    active: false,
-    groupId: null,
-    startClientX: 0,
-    startClientY: 0,
-    startAnchorX: 0,
-    startAnchorY: 0,
-    moved: false,
-  });
-
   const autoPanRef = useRef({
     active: false,
     directionX: 0,
@@ -232,6 +222,15 @@ export default function Canvas({
     scaleRef.current = scale;
   }, [scale]);
 
+  // Wrapper pour vérifier la limite de stockage avant d'ajouter une image
+  const safeAddImage = (imageData) => {
+    if (!canAddImage(imageData.url)) {
+      setStorageFullAlert(true);
+      return;
+    }
+    addImage(imageData);
+  };
+
   // Helper pour copier l'image sélectionnée dans le clipboard
   const copySelectedImage = () => {
     if (selectedImageIdsRef.current.length === 0) return;
@@ -242,69 +241,89 @@ export default function Canvas({
       const imgElement = new Image();
       imgElement.crossOrigin = "anonymous";
       imgElement.onload = () => {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        canvas.width = imgElement.naturalWidth;
-        canvas.height = imgElement.naturalHeight;
-        ctx.drawImage(imgElement, 0, 0);
-
-        canvas.toBlob((blob) => {
-          if (blob && navigator.clipboard && navigator.clipboard.write) {
-            const item = new ClipboardItem({ "image/png": blob });
-            navigator.clipboard.write([item]).catch((err) => {
-              console.error("Failed to copy image:", err);
-            });
-          }
-        });
+        try {
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+          canvas.width = imgElement.naturalWidth;
+          canvas.height = imgElement.naturalHeight;
+          ctx.drawImage(imgElement, 0, 0);
+          canvas.toBlob((blob) => {
+            if (blob && navigator.clipboard && navigator.clipboard.write) {
+              const item = new ClipboardItem({ "image/png": blob });
+              navigator.clipboard.write([item]).catch((err) => {
+                console.error("Failed to copy image:", err);
+              });
+            }
+          });
+        } catch (err) {
+          console.error("Failed to copy image:", err);
+        }
       };
       imgElement.src = selectedImage.url;
     }
   };
 
-  // Coller image depuis clipboard
-  useEffect(() => {
-    const handlePaste = (e) => {
-      const files = e.clipboardData.files;
-      if (!files || files.length === 0) return;
+  // Helper pour coller une image depuis le clipboard
+  const pasteImage = async () => {
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const imageType = item.types.find((type) => type.startsWith("image/"));
+        if (!imageType) continue;
 
-      const file = files[0];
-      if (!file.type.startsWith("image/")) return;
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        const img = new Image();
-        img.src = reader.result;
-        img.onload = () => {
-          const maxWidth = 200;
-          const scaleImg = maxWidth / img.width;
-          const centerX =
-            (window.innerWidth / 2 - offsetRef.current.x) / scaleRef.current;
-          const centerY =
-            (window.innerHeight / 2 - offsetRef.current.y) / scaleRef.current;
-
-          saveHistory();
-          addImage({
-            url: reader.result,
-            x: centerX - (img.width * scaleImg) / 2,
-            y: centerY - (img.height * scaleImg) / 2,
-            width: img.width * scaleImg,
-            height: img.height * scaleImg,
-            originalWidth: img.width,
-            originalHeight: img.height,
-            groupId: activeGroupBoardId || undefined,
-          });
+        const blob = await item.getType(imageType);
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            const compressed = await compressImageDataUrl(reader.result);
+            const centerX = (containerRef.current?.clientWidth || 800) / 2;
+            const centerY = (containerRef.current?.clientHeight || 600) / 2;
+            saveHistoryRef.current();
+            safeAddImage({
+              url: compressed.url,
+              x: centerX - compressed.width / 2,
+              y: centerY - compressed.height / 2,
+              width: compressed.width,
+              height: compressed.height,
+              originalWidth: compressed.originalWidth,
+              originalHeight: compressed.originalHeight,
+              rotation: 0,
+            });
+          } catch (err) {
+            console.error("Failed to paste image:", err);
+          }
         };
-      };
-      reader.readAsDataURL(file);
-    };
+        reader.readAsDataURL(blob);
+      }
+    } catch (err) {
+      console.error("Failed to paste image:", err);
+    }
+  };
 
-    window.addEventListener("paste", handlePaste);
-    return () => window.removeEventListener("paste", handlePaste);
-  }, [addImage, saveHistory, activeGroupBoardId]);
+  useEffect(() => {
+    pasteImageRef.current = pasteImage;
+  });
 
-  // Ctrl+Z et gestion des touches
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Permettre copier/coller même quand le modal est ouvert
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.key === "c" &&
+        selectedImageIdsRef.current.length > 0
+      ) {
+        e.preventDefault();
+        copySelectedImage();
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        e.preventDefault();
+        pasteImageRef.current?.();
+        return;
+      }
+
+      if (showImageInfo) return;
       ctrlPressedRef.current = e.ctrlKey || e.metaKey || e.shiftKey;
       if (e.key === " " || e.key === "Spacebar") {
         spacePressedRef.current = true;
@@ -325,15 +344,6 @@ export default function Canvas({
       if ((e.ctrlKey || e.metaKey) && e.key === "y") {
         e.preventDefault();
         redoRef.current();
-      }
-
-      if (
-        (e.ctrlKey || e.metaKey) &&
-        e.key === "c" &&
-        selectedImageIdsRef.current.length > 0
-      ) {
-        e.preventDefault();
-        copySelectedImage();
       }
 
       if (e.key === "Delete" && selectedImageIdsRef.current.length > 0) {
@@ -359,7 +369,7 @@ export default function Canvas({
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, []);
+  }, [showImageInfo]);
 
   // Attacher mousemove et mouseup à window pour tracker même hors du canvas
   useEffect(() => {
@@ -367,7 +377,6 @@ export default function Canvas({
       if (
         selectionBoxRef.current.active ||
         draggingRef.current.active ||
-        packDraggingRef.current.active ||
         resizingRef.current.active ||
         rotatingRef.current.active ||
         panningRef.current.active
@@ -445,64 +454,7 @@ export default function Canvas({
     }
   };
 
-  const getPackDragOffset = () => {
-    if (!packDraggingRef.current.active) {
-      return { x: 0, y: 0 };
-    }
-
-    const scale = scaleRef.current || 1;
-    return {
-      x: (lastPointerRef.current.clientX - packDraggingRef.current.startClientX) / scale,
-      y: (lastPointerRef.current.clientY - packDraggingRef.current.startClientY) / scale,
-    };
-  };
-
-  const applyPackDragVisual = () => {
-    const groupId = packDraggingRef.current.groupId;
-    if (!groupId) return;
-
-    const el = packNodeRefs.current.get(groupId);
-    if (!el) return;
-
-    const { x, y } = getPackDragOffset();
-    el.style.transform = `translate(${x}px, ${y}px)`;
-    el.style.willChange = "transform";
-  };
-
-  const clearPackDragVisual = (groupId) => {
-    if (!groupId) return;
-    const el = packNodeRefs.current.get(groupId);
-    if (!el) return;
-    el.style.transform = "";
-    el.style.willChange = "";
-  };
-
-  const getGroupPackAtPoint = (mouseX, mouseY) => {
-    if (activeGroupBoardId) return null;
-
-    for (const [groupId, anchor] of Object.entries(groupAnchorsMap)) {
-      const hasImages = images.some((img) => img.groupId === groupId);
-      if (!hasImages || !anchor) continue;
-
-      const packX = anchor.x - GROUP_PACK_BORDER;
-      const packY = anchor.y - GROUP_PACK_BORDER;
-      const packW = GROUP_PACK_WIDTH + GROUP_PACK_BORDER * 2;
-      const packH = GROUP_PACK_HEIGHT + GROUP_PACK_BORDER * 2;
-
-      if (
-        mouseX >= packX &&
-        mouseX <= packX + packW &&
-        mouseY >= packY &&
-        mouseY <= packY + packH
-      ) {
-        return groupId;
-      }
-    }
-
-    return null;
-  };
-
-  const getImageIdAtPoint = (mouseX, mouseY, sourceImages = visibleImages) => {
+  const getImageIdAtPoint = (mouseX, mouseY, sourceImages = images) => {
     for (let i = sourceImages.length - 1; i >= 0; i--) {
       const img = sourceImages[i];
       const local = getLocalPoint(mouseX, mouseY, img);
@@ -526,8 +478,8 @@ export default function Canvas({
     const mouseY =
       (clientY - rect.top - offsetRef.current.y) / scaleRef.current;
 
-    for (let i = visibleImages.length - 1; i >= 0; i--) {
-      const img = visibleImages[i];
+    for (let i = images.length - 1; i >= 0; i--) {
+      const img = images[i];
       const local = getLocalPoint(mouseX, mouseY, img);
 
       if (
@@ -550,47 +502,10 @@ export default function Canvas({
     }
   };
 
-  const clearGroupHoverTarget = () => {
-    if (groupHoverTimerRef.current) {
-      clearTimeout(groupHoverTimerRef.current);
-      groupHoverTimerRef.current = null;
-    }
-    groupHoverCandidateRef.current = null;
-    setGroupTargetId(null);
-  };
-
-  const setGroupHoverCandidate = (candidateId) => {
-    if (groupHoverCandidateRef.current === candidateId) return;
-    clearGroupHoverTarget();
-    if (!candidateId) return;
-
-    groupHoverCandidateRef.current = candidateId;
-    groupHoverTimerRef.current = window.setTimeout(() => {
-      setGroupTargetId(candidateId);
-      groupHoverTimerRef.current = null;
-    }, 600);
-  };
-
-  const getGroupCandidateAtPoint = (mouseX, mouseY, excludedIds) => {
-    for (let i = visibleImages.length - 1; i >= 0; i--) {
-      const img = visibleImages[i];
-      if (excludedIds.includes(img.id)) continue;
-      const local = getLocalPoint(mouseX, mouseY, img);
-      if (
-        local.x >= 0 &&
-        local.x <= img.width &&
-        local.y >= 0 &&
-        local.y <= img.height
-      ) {
-        return img.id;
-      }
-    }
-    return null;
-  };
-
   const handleTouchStart = (e) => {
-    // Ignorer si le menu est ouvert
+    // Ignorer si le menu est ouvert ou si le modal info est affiché
     if (contextMenu.visible) return;
+    if (showImageInfo) return;
     if (e.target.closest(".toolbar")) return;
 
     touchesRef.current = Array.from(e.touches);
@@ -730,12 +645,7 @@ export default function Canvas({
           endedImageId === touchStartImageIdRef.current &&
           selectedImageIds.includes(endedImageId)
         ) {
-          const endedImage = images.find((img) => img.id === endedImageId);
-          if (endedImage?.groupId) {
-            onOpenGroupBoard(endedImage.groupId);
-          } else {
-            openContextMenuAtPoint(touch.clientX, touch.clientY);
-          }
+          openContextMenuAtPoint(touch.clientX, touch.clientY);
         }
         if (
           endedImageId === touchStartImageIdRef.current &&
@@ -829,6 +739,7 @@ export default function Canvas({
   };
 
   const handleMouseDown = (e) => {
+    if (showImageInfo) return;
     if (e.target.closest(".toolbar")) return;
 
     dragStartRef.current = { x: e.clientX, y: e.clientY };
@@ -837,29 +748,6 @@ export default function Canvas({
       (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
     const mouseY =
       (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
-    const packGroupId =
-      e.button === 0 && !activeGroupBoardId
-        ? getGroupPackAtPoint(mouseX, mouseY)
-        : null;
-
-    if (packGroupId) {
-      const anchor = groupAnchorsMap[packGroupId];
-      if (anchor) {
-        saveHistory();
-        packDraggingRef.current = {
-          active: true,
-          groupId: packGroupId,
-          startClientX: e.clientX,
-          startClientY: e.clientY,
-          startAnchorX: anchor.x,
-          startAnchorY: anchor.y,
-          moved: false,
-        };
-        lastPointerRef.current = { clientX: e.clientX, clientY: e.clientY };
-        applyPackDragVisual();
-      }
-      return;
-    }
 
     // espace + clic gauche déclenche le panoramique
     if (e.button === 0 && spacePressedRef.current) {
@@ -914,8 +802,8 @@ export default function Canvas({
 
       // Vérifier clic sur image
       let clickedImageId = null;
-      for (let i = visibleImages.length - 1; i >= 0; i--) {
-        const img = visibleImages[i];
+      for (let i = images.length - 1; i >= 0; i--) {
+        const img = images[i];
         const local = getLocalPoint(mouseX, mouseY, img);
 
         if (
@@ -960,14 +848,10 @@ export default function Canvas({
 
     // Clic droit
     if (e.button === 2) {
-      if (!activeGroupBoardId && getGroupPackAtPoint(mouseX, mouseY)) {
-        return;
-      }
-
       // Vérifier si clic sur image
       let clickedImageId = null;
-      for (let i = visibleImages.length - 1; i >= 0; i--) {
-        const img = visibleImages[i];
+      for (let i = images.length - 1; i >= 0; i--) {
+        const img = images[i];
         const local = getLocalPoint(mouseX, mouseY, img);
 
         if (
@@ -1026,23 +910,10 @@ export default function Canvas({
   };
 
   const handleMouseMove = (e) => {
+    if (showImageInfo) return;
     lastPointerRef.current = { clientX: e.clientX, clientY: e.clientY };
 
     const rect = containerRef.current.getBoundingClientRect();
-    const mouseX =
-      (e.clientX - rect.left - offsetRef.current.x) / scaleRef.current;
-    const mouseY =
-      (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
-
-    if (packDraggingRef.current.active) {
-      const screenDeltaX = e.clientX - packDraggingRef.current.startClientX;
-      const screenDeltaY = e.clientY - packDraggingRef.current.startClientY;
-      if (Math.hypot(screenDeltaX, screenDeltaY) > 5) {
-        packDraggingRef.current.moved = true;
-      }
-      applyPackDragVisual();
-      return;
-    }
 
     /* =========================
       AUTO PAN DETECTION
@@ -1245,7 +1116,7 @@ export default function Canvas({
       const maxX = Math.max(selectionBoxRef.current.startX, mouseX);
       const maxY = Math.max(selectionBoxRef.current.startY, mouseY);
 
-      const selectedIds = visibleImages
+      const selectedIds = images
         .filter(
           (img) =>
             img.x + img.width > minX &&
@@ -1261,12 +1132,6 @@ export default function Canvas({
 
     // Drag images
     if (draggingRef.current.active) {
-      const dragCandidateId = getGroupCandidateAtPoint(
-        mouseX,
-        mouseY,
-        draggingRef.current.imageIds,
-      );
-      setGroupHoverCandidate(dragCandidateId);
       applyImageDragVisual();
       return;
     }
@@ -1281,7 +1146,7 @@ export default function Canvas({
   };
 
   const handleMouseUp = () => {
-    const wasPackDragging = packDraggingRef.current.active;
+    if (showImageInfo) return;
     const wasDraggingImages = draggingRef.current.active;
     const wasResizing = resizingRef.current.active;
     const wasRotating = rotatingRef.current.active;
@@ -1297,19 +1162,6 @@ export default function Canvas({
     }
 
     const draggedImageIds = [...draggingRef.current.imageIds];
-    const packGroupId = packDraggingRef.current.groupId;
-
-    if (wasPackDragging) {
-      const { moved, startAnchorX, startAnchorY } = packDraggingRef.current;
-      const { x, y } = getPackDragOffset();
-      packDraggingRef.current.active = false;
-      clearPackDragVisual(packGroupId);
-      if (packGroupId && (x !== 0 || y !== 0)) {
-        updateGroupAnchor(packGroupId, startAnchorX + x, startAnchorY + y);
-      } else if (packGroupId && !moved) {
-        onOpenGroupBoard(packGroupId);
-      }
-    }
 
     if (wasDraggingImages) {
       const { x, y } = getImageDragOffset();
@@ -1319,12 +1171,6 @@ export default function Canvas({
       }
     }
 
-    if (wasDraggingImages && groupTargetId) {
-      saveHistory();
-      groupImages(draggedImageIds, groupTargetId);
-    }
-
-    clearGroupHoverTarget();
     draggingRef.current.active = false;
     resizingRef.current.active = false;
     rotatingRef.current.active = false;
@@ -1341,7 +1187,7 @@ export default function Canvas({
       const maxX = Math.max(startX, currentX);
       const maxY = Math.max(startY, currentY);
 
-      const selectedIds = visibleImages
+      const selectedIds = images
         .filter(
           (img) =>
             img.x + img.width > minX &&
@@ -1399,6 +1245,7 @@ export default function Canvas({
   };
 
   const handleCanvasClick = (e) => {
+    if (showImageInfo) return;
     if (e.button === 2) return; // Ignorer le clic droit
     if (e.target.closest("[data-context-menu]")) return; // Ignorer les clics sur le menu contextuel
 
@@ -1414,8 +1261,8 @@ export default function Canvas({
     const mouseY =
       (e.clientY - rect.top - offsetRef.current.y) / scaleRef.current;
 
-    for (let i = visibleImages.length - 1; i >= 0; i--) {
-      const img = visibleImages[i];
+    for (let i = images.length - 1; i >= 0; i--) {
+      const img = images[i];
       const local = getLocalPoint(mouseX, mouseY, img);
 
       if (
@@ -1434,6 +1281,7 @@ export default function Canvas({
   // Zoom
   useEffect(() => {
     const handleWheel = (e) => {
+      if (showImageInfo) return;
       e.preventDefault();
       const zoomSpeed = 0.001;
       const newScale = Math.min(
@@ -1463,7 +1311,7 @@ export default function Canvas({
         container.removeEventListener("contextmenu", (e) => e.preventDefault());
       };
     }
-  }, [setScale, setOffsetX, setOffsetY]);
+  }, [setScale, setOffsetX, setOffsetY, showImageInfo]);
 
   // Empêcher le navigateur d'ouvrir les fichiers directement
   useEffect(() => {
@@ -1487,12 +1335,14 @@ export default function Canvas({
   }, []);
 
   const handleDragOver = (e) => {
+    if (showImageInfo) return;
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = "copy";
   };
 
   const handleDrop = (e) => {
+    if (showImageInfo) return;
     e.preventDefault();
     e.stopPropagation();
 
@@ -1508,47 +1358,44 @@ export default function Canvas({
       if (!file.type.startsWith("image/")) return;
 
       const reader = new FileReader();
-      reader.onload = () => {
-        const img = new Image();
-        img.src = reader.result;
-        img.onload = () => {
-          const maxWidth = 200;
-          const scaleImg = maxWidth / img.width;
+      reader.onload = async () => {
+        try {
+          const compressed = await compressImageDataUrl(reader.result);
           saveHistory();
-          addImage({
-            url: reader.result,
-            x: dropX - (img.width * scaleImg) / 2,
-            y: dropY - (img.height * scaleImg) / 2,
-            width: img.width * scaleImg,
-            height: img.height * scaleImg,
-            originalWidth: img.width,
-            originalHeight: img.height,
-            groupId: activeGroupBoardId || undefined,
+          safeAddImage({
+            url: compressed.url,
+            x: dropX - compressed.width / 2,
+            y: dropY - compressed.height / 2,
+            width: compressed.width,
+            height: compressed.height,
+            originalWidth: compressed.originalWidth,
+            originalHeight: compressed.originalHeight,
           });
-        };
+        } catch (error) {
+          console.error("Échec de la compression de l'image déposée :", error);
+        }
       };
       reader.readAsDataURL(file);
     } else {
       // Traiter les URLs (drag depuis navigateur)
       const url = e.dataTransfer.getData("text/uri-list");
       if (url) {
-        const img = new Image();
-        img.onload = () => {
-          const maxWidth = 200;
-          const scaleImg = maxWidth / img.width;
-          saveHistory();
-          addImage({
-            url,
-            x: dropX - (img.width * scaleImg) / 2,
-            y: dropY - (img.height * scaleImg) / 2,
-            width: img.width * scaleImg,
-            height: img.height * scaleImg,
-            originalWidth: img.width,
-            originalHeight: img.height,
-            groupId: activeGroupBoardId || undefined,
+        getDimensionsFromImageSource(url)
+          .then((dimensions) => {
+            saveHistory();
+            safeAddImage({
+              url,
+              x: dropX - dimensions.width / 2,
+              y: dropY - dimensions.height / 2,
+              width: dimensions.width,
+              height: dimensions.height,
+              originalWidth: dimensions.originalWidth,
+              originalHeight: dimensions.originalHeight,
+            });
+          })
+          .catch((error) => {
+            console.error("Impossible de charger l'image déposée :", error);
           });
-        };
-        img.src = url;
       }
     }
   };
@@ -1564,6 +1411,7 @@ export default function Canvas({
         cursor: isPanning ? "grabbing" : "default",
         marginBottom: "0",
         marginLeft: "0",
+        pointerEvents: showImageInfo || contextMenu.visible ? "none" : "auto",
       }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
@@ -1609,72 +1457,8 @@ export default function Canvas({
           />
         )}
 
-        {!activeGroupBoardId &&
-          groupPacks.map((group) => {
-            const packWidth = GROUP_PACK_WIDTH + GROUP_PACK_BORDER * 2;
-            const packHeight = GROUP_PACK_HEIGHT + GROUP_PACK_BORDER * 2;
-            const baseTop = Math.max(
-              (packHeight - GROUP_PACK_CARD_HEIGHT) / 2,
-              GROUP_PACK_CARD_PADDING,
-            );
-            const baseLeft = Math.max(
-              (packWidth - GROUP_PACK_CARD_WIDTH) / 2,
-              GROUP_PACK_CARD_PADDING,
-            );
-
-            return (
-              <div
-                key={group.groupId}
-                ref={(el) => {
-                  if (el) packNodeRefs.current.set(group.groupId, el);
-                  else packNodeRefs.current.delete(group.groupId);
-                }}
-                data-group-pack
-                className="absolute rounded-3xl border-2 border-white/10 bg-slate-950/20 shadow-2xl shadow-slate-950/20 cursor-grab active:cursor-grabbing"
-                style={{
-                  top: group.y - GROUP_PACK_BORDER,
-                  left: group.x - GROUP_PACK_BORDER,
-                  width: packWidth,
-                  height: packHeight,
-                  zIndex: 900,
-                }}
-              >
-                <div className="pointer-events-none absolute inset-0 select-none">
-                  {group.previewImages.map((img, index) => {
-                    const cardOffset =
-                      (group.previewImages.length - 1 - index) * 10;
-                    const cardRotate = index === 0 ? -8 : index === 1 ? 6 : -3;
-                    return (
-                      <div
-                        key={img.id}
-                        data-group-pack-preview
-                        aria-hidden
-                        className="absolute overflow-hidden rounded-3xl border border-white/10 bg-slate-950 shadow-xl"
-                        style={{
-                          width: GROUP_PACK_CARD_WIDTH,
-                          height: GROUP_PACK_CARD_HEIGHT,
-                          top: baseTop + cardOffset,
-                          left: baseLeft + cardOffset,
-                          zIndex: 10 + index,
-                          transform: `rotate(${cardRotate}deg)`,
-                        }}
-                      >
-                        <img
-                          src={img.url}
-                          alt=""
-                          draggable={false}
-                          className="h-full w-full object-cover pointer-events-none select-none"
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-
         {/* Images */}
-        {visibleImages.map((img, index) => (
+        {images.map((img, index) => (
           <div
             key={img.id}
             ref={(el) => {
@@ -1705,11 +1489,6 @@ export default function Canvas({
                 transformOrigin: "center center",
               }}
             />
-            {img.groupId && (
-              <div className="absolute top-2 right-2 h-6 w-6 rounded-full bg-sky-500/90 text-[10px] text-white font-semibold flex items-center justify-center pointer-events-none shadow-md shadow-slate-950/30">
-                G
-              </div>
-            )}
 
             {/* Poignées de redimensionnement */}
             {selectedImageIds.includes(img.id) &&
@@ -1858,56 +1637,11 @@ export default function Canvas({
               })()}
           </div>
         ))}
-        {groupTarget && (
-          <>
-            <div
-              className="absolute pointer-events-none rounded-3xl border-4 border-lime-400/80 bg-lime-400/15"
-              style={{
-                top: groupTarget.y,
-                left: groupTarget.x,
-                width: groupTarget.width,
-                height: groupTarget.height,
-              }}
-            />
-            <div
-              className="absolute pointer-events-none rounded-full bg-lime-500/90 text-[10px] text-slate-950 font-semibold px-2 py-1"
-              style={{
-                top: Math.max(groupTarget.y - 26, 0),
-                left: groupTarget.x,
-              }}
-            >
-              Relâchez pour grouper
-            </div>
-          </>
-        )}
       </div>
 
       {/* Overlay pour le menu contextuel */}
       {contextMenu.visible && (
         <div className="fixed inset-0 z-[2999]" onClick={closeContextMenu} />
-      )}
-
-      {activeGroupBoardId && (
-        <div className="fixed left-4 top-4 z-[3010] rounded-3xl border border-white/10 bg-slate-950/95 px-4 py-3 shadow-2xl shadow-black/40 backdrop-blur-xl text-white flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onCloseGroupBoard}
-              className="rounded-full border border-white/10 bg-white/10 px-3 py-2 text-sm font-semibold hover:bg-white/15"
-            >
-              Retour
-            </button>
-            <div className="text-sm">Board de groupe</div>
-          </div>
-          <button
-            onClick={() => {
-              ungroupImages(activeGroupBoardId);
-              onCloseGroupBoard();
-            }}
-            className="rounded-full border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-200 hover:bg-rose-500/20"
-          >
-            Dissocier
-          </button>
-        </div>
       )}
 
       {/* Menu contextuel */}
@@ -1992,6 +1726,19 @@ export default function Canvas({
             <FiCopy className="mr-3" />
             Taille originale
           </button>
+
+          <button
+            className="flex items-center w-full text-left px-4 py-2 text-gray-900 hover:bg-gray-100 transition-colors"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              if (contextMenu.imageId) handleShowImageInfo(contextMenu.imageId);
+            }}
+          >
+            <FiInfo className="mr-3" />
+            Info
+          </button>
           <div className="border-t border-gray-300 my-1"></div>
           <button
             className="flex items-center w-full text-left px-4 py-2 text-red-600 hover:bg-gray-100 transition-colors"
@@ -2009,6 +1756,102 @@ export default function Canvas({
           </button>
         </div>
       )}
+
+      {/* Popup d'alerte - Stockage plein */}
+      {storageFullAlert && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/50 z-[4000]"
+            onClick={() => setStorageFullAlert(false)}
+          />
+          <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[4001] bg-slate-950 border border-red-500/30 rounded-2xl p-6 shadow-2xl max-w-md">
+            <h2 className="text-xl font-bold text-white mb-3">
+              Stockage plein ⚠️
+            </h2>
+            <p className="text-gray-300 mb-6">
+              Vous avez atteint la limite de stockage. Impossible d'ajouter plus
+              d'images.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setStorageFullAlert(false)}
+                className="flex-1 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-semibold transition-colors"
+              >
+                Fermer
+              </button>
+              <button
+                onClick={() => {
+                  setStorageFullAlert(false);
+                  // Scroll vers la barre d'outil pour que l'utilisateur voie les options
+                  const toolbar = document.querySelector(".toolbar");
+                  toolbar?.scrollIntoView({ behavior: "smooth" });
+                }}
+                className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold transition-colors"
+              >
+                Voir options
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Modal d'info image */}
+      {showImageInfo &&
+        imageInfo &&
+        createPortal(
+          <>
+            <div
+              className="fixed inset-0 bg-black/40 z-[4000]"
+              onClick={() => setShowImageInfo(false)}
+            />
+            <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[4001] bg-slate-950 border border-white/10 rounded-2xl p-6 shadow-2xl max-w-sm w-[92vw]">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-white">
+                    Information de l'image
+                  </h3>
+                  <p className="text-sm text-slate-400 mt-1">
+                    Poids et pourcentage du moodboard
+                  </p>
+                </div>
+                <button
+                  className="text-slate-300 text-xl hover:text-white"
+                  onClick={() => setShowImageInfo(false)}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <div className="text-sm text-slate-400">Taille du fichier</div>
+                <div className="text-white font-semibold text-lg">
+                  {formatBytes(imageInfo.bytes)}
+                </div>
+
+                <div className="text-sm text-slate-400 mt-3">
+                  Pourcentage du moodboard
+                </div>
+                <div className="text-white font-semibold">
+                  {imageInfo.percentOfBoard.toFixed(2)}%
+                </div>
+
+                <div className="text-sm text-slate-400 mt-3">% du quota</div>
+                <div className="text-white font-semibold">
+                  {imageInfo.percentOfQuota.toFixed(1)}%
+                </div>
+
+                <div className="mt-4">
+                  <img
+                    src={imageInfo.src}
+                    alt="preview"
+                    className="w-full rounded-lg max-h-44 object-contain"
+                  />
+                </div>
+              </div>
+            </div>
+          </>,
+          document.body,
+        )}
     </div>
   );
 }

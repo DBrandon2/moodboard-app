@@ -3,70 +3,12 @@ import { v4 as uuidv4 } from "uuid";
 
 export const STORAGE_KEY = "moodboard_state";
 
-/** Position d'ancrage du pack (coin supérieur gauche), figée à la création du groupe */
-export function computeGroupAnchorFromImages(images, groupId) {
-  const groupImages = images.filter((img) => img.groupId === groupId);
-  if (groupImages.length === 0) return null;
-
-  return {
-    x: Math.min(...groupImages.map((img) => img.x)),
-    y: Math.min(...groupImages.map((img) => img.y)),
-  };
-}
-
-function getActiveGroupIds(images) {
-  const ids = new Set();
-  for (const img of images) {
-    if (img.groupId) ids.add(img.groupId);
-  }
-  return ids;
-}
-
-function normalizeAnchorsFromRaw(raw = {}) {
-  const anchors = {};
-  for (const [groupId, value] of Object.entries(raw)) {
-    if (
-      value &&
-      typeof value.x === "number" &&
-      typeof value.y === "number"
-    ) {
-      anchors[groupId] = { x: value.x, y: value.y };
-    }
-  }
-  return anchors;
-}
-
-export function migrateGroupAnchors(images, groupAnchors = {}) {
-  const anchors = { ...groupAnchors };
-  const activeGroupIds = getActiveGroupIds(images);
-
-  for (const groupId of activeGroupIds) {
-    if (!anchors[groupId]) {
-      const snapshot = computeGroupAnchorFromImages(images, groupId);
-      if (snapshot) anchors[groupId] = snapshot;
-    }
-  }
-
-  for (const groupId of Object.keys(anchors)) {
-    if (!activeGroupIds.has(groupId)) {
-      delete anchors[groupId];
-    }
-  }
-
-  return anchors;
-}
-
-function pruneGroupAnchors(images, groupAnchors) {
-  const anchors = { ...groupAnchors };
-  const activeGroupIds = getActiveGroupIds(images);
-
-  for (const groupId of Object.keys(anchors)) {
-    if (!activeGroupIds.has(groupId)) {
-      delete anchors[groupId];
-    }
-  }
-
-  return anchors;
+function stripGroupFields(images = []) {
+  return images.map((img) => {
+    const cleaned = { ...img };
+    delete cleaned.groupId;
+    return cleaned;
+  });
 }
 
 const loadFromStorage = () => {
@@ -74,31 +16,24 @@ const loadFromStorage = () => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
-      const images = parsed.images || [];
-      const rawAnchors = parsed.groupAnchors || parsed.groupBounds || {};
       return {
-        images,
+        images: stripGroupFields(parsed.images || []),
         selectedImageIds: parsed.selectedImageIds || [],
-        groupAnchors: migrateGroupAnchors(
-          images,
-          normalizeAnchorsFromRaw(rawAnchors),
-        ),
       };
     }
   } catch (error) {
     console.error("Erreur lors du chargement du localStorage:", error);
   }
-  return { images: [], selectedImageIds: [], groupAnchors: {} };
+  return { images: [], selectedImageIds: [] };
 };
 
-const saveToStorage = (images, selectedImageIds, groupAnchors) => {
+const saveToStorage = (images, selectedImageIds) => {
   try {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
         images,
         selectedImageIds,
-        groupAnchors,
         timestamp: new Date().toISOString(),
       }),
     );
@@ -107,15 +42,11 @@ const saveToStorage = (images, selectedImageIds, groupAnchors) => {
   }
 };
 
-const cloneGroupAnchors = (groupAnchors) =>
-  JSON.parse(JSON.stringify(groupAnchors || {}));
-
 const initialState = loadFromStorage();
 
 export const useBoardStore = create((set) => ({
   images: initialState.images,
   selectedImageIds: initialState.selectedImageIds,
-  groupAnchors: initialState.groupAnchors,
   history: [],
   future: [],
 
@@ -126,7 +57,6 @@ export const useBoardStore = create((set) => ({
         {
           images: JSON.parse(JSON.stringify(state.images)),
           selectedImageIds: [...state.selectedImageIds],
-          groupAnchors: cloneGroupAnchors(state.groupAnchors),
         },
       ],
       future: [],
@@ -139,28 +69,18 @@ export const useBoardStore = create((set) => ({
 
       const historyClone = [...state.history];
       const previousState = historyClone.pop();
-      const restoredAnchors = migrateGroupAnchors(
-        previousState.images,
-        previousState.groupAnchors || {},
-      );
 
-      saveToStorage(
-        previousState.images,
-        previousState.selectedImageIds,
-        restoredAnchors,
-      );
+      saveToStorage(previousState.images, previousState.selectedImageIds);
 
       return {
         images: previousState.images,
         selectedImageIds: previousState.selectedImageIds,
-        groupAnchors: restoredAnchors,
         history: historyClone,
         future: [
           ...state.future,
           {
             images: JSON.parse(JSON.stringify(state.images)),
             selectedImageIds: [...state.selectedImageIds],
-            groupAnchors: cloneGroupAnchors(state.groupAnchors),
           },
         ],
       };
@@ -173,27 +93,17 @@ export const useBoardStore = create((set) => ({
 
       const futureClone = [...state.future];
       const nextState = futureClone.pop();
-      const restoredAnchors = migrateGroupAnchors(
-        nextState.images,
-        nextState.groupAnchors || {},
-      );
 
-      saveToStorage(
-        nextState.images,
-        nextState.selectedImageIds,
-        restoredAnchors,
-      );
+      saveToStorage(nextState.images, nextState.selectedImageIds);
 
       return {
         images: nextState.images,
         selectedImageIds: nextState.selectedImageIds,
-        groupAnchors: restoredAnchors,
         history: [
           ...state.history,
           {
             images: JSON.parse(JSON.stringify(state.images)),
             selectedImageIds: [...state.selectedImageIds],
-            groupAnchors: cloneGroupAnchors(state.groupAnchors),
           },
         ],
         future: futureClone,
@@ -208,11 +118,10 @@ export const useBoardStore = create((set) => ({
         {
           id: uuidv4(),
           rotation: 0,
-          groupId: newImage.groupId || undefined,
           ...newImage,
         },
       ];
-      saveToStorage(newImages, state.selectedImageIds, state.groupAnchors);
+      saveToStorage(newImages, state.selectedImageIds);
       return {
         images: newImages,
         future: [],
@@ -222,7 +131,7 @@ export const useBoardStore = create((set) => ({
 
   persistBoard: () => {
     set((state) => {
-      saveToStorage(state.images, state.selectedImageIds, state.groupAnchors);
+      saveToStorage(state.images, state.selectedImageIds);
       return state;
     });
   },
@@ -234,7 +143,7 @@ export const useBoardStore = create((set) => ({
         img.id === imageId ? { ...img, x, y } : img,
       );
       if (persist) {
-        saveToStorage(newImages, state.selectedImageIds, state.groupAnchors);
+        saveToStorage(newImages, state.selectedImageIds);
       }
       return {
         images: newImages,
@@ -253,7 +162,7 @@ export const useBoardStore = create((set) => ({
           : img,
       );
       if (persist) {
-        saveToStorage(newImages, state.selectedImageIds, state.groupAnchors);
+        saveToStorage(newImages, state.selectedImageIds);
       }
       return {
         images: newImages,
@@ -264,7 +173,7 @@ export const useBoardStore = create((set) => ({
 
   selectImages: (imageIds) => {
     set((state) => {
-      saveToStorage(state.images, imageIds, state.groupAnchors);
+      saveToStorage(state.images, imageIds);
       return { selectedImageIds: imageIds };
     });
   },
@@ -275,14 +184,14 @@ export const useBoardStore = create((set) => ({
       const selectedImageIds = isSelected
         ? state.selectedImageIds.filter((id) => id !== imageId)
         : [...state.selectedImageIds, imageId];
-      saveToStorage(state.images, selectedImageIds, state.groupAnchors);
+      saveToStorage(state.images, selectedImageIds);
       return { selectedImageIds };
     });
   },
 
   clearSelection: () => {
     set((state) => {
-      saveToStorage(state.images, [], state.groupAnchors);
+      saveToStorage(state.images, []);
       return { selectedImageIds: [] };
     });
   },
@@ -292,7 +201,7 @@ export const useBoardStore = create((set) => ({
       const newImages = state.images.map((img) =>
         img.id === imageId ? { ...img, width, height } : img,
       );
-      saveToStorage(newImages, state.selectedImageIds, state.groupAnchors);
+      saveToStorage(newImages, state.selectedImageIds);
       return {
         images: newImages,
         future: [],
@@ -314,7 +223,7 @@ export const useBoardStore = create((set) => ({
         img.id === imageId ? { ...img, x, y, width, height } : img,
       );
       if (persist) {
-        saveToStorage(newImages, state.selectedImageIds, state.groupAnchors);
+        saveToStorage(newImages, state.selectedImageIds);
       }
       return {
         images: newImages,
@@ -330,7 +239,7 @@ export const useBoardStore = create((set) => ({
         img.id === imageId ? { ...img, rotation } : img,
       );
       if (persist) {
-        saveToStorage(newImages, state.selectedImageIds, state.groupAnchors);
+        saveToStorage(newImages, state.selectedImageIds);
       }
       return {
         images: newImages,
@@ -347,12 +256,10 @@ export const useBoardStore = create((set) => ({
       const newSelectedIds = state.selectedImageIds.filter(
         (id) => !imageIds.includes(id),
       );
-      const newGroupAnchors = pruneGroupAnchors(newImages, state.groupAnchors);
-      saveToStorage(newImages, newSelectedIds, newGroupAnchors);
+      saveToStorage(newImages, newSelectedIds);
       return {
         images: newImages,
         selectedImageIds: newSelectedIds,
-        groupAnchors: newGroupAnchors,
         future: [],
       };
     });
@@ -369,99 +276,16 @@ export const useBoardStore = create((set) => ({
             id: uuidv4(),
             x: img.x + 20,
             y: img.y + 20,
-            groupId: undefined,
           });
         }
       });
 
       const allImages = [...state.images, ...newImages];
       const newSelectedIds = newImages.map((img) => img.id);
-      saveToStorage(allImages, newSelectedIds, state.groupAnchors);
+      saveToStorage(allImages, newSelectedIds);
       return {
         images: allImages,
         selectedImageIds: newSelectedIds,
-        future: [],
-      };
-    });
-  },
-
-  groupImages: (draggedImageIds, targetImageId) => {
-    set((state) => {
-      const targetImage = state.images.find((img) => img.id === targetImageId);
-      if (!targetImage) return state;
-
-      const targetGroupId = targetImage.groupId || uuidv4();
-      const draggedGroupIds = new Set(
-        draggedImageIds
-          .map((id) => state.images.find((img) => img.id === id)?.groupId)
-          .filter(Boolean),
-      );
-      if (targetImage.groupId) draggedGroupIds.add(targetImage.groupId);
-
-      const newImages = state.images.map((img) => {
-        const shouldGroup =
-          draggedImageIds.includes(img.id) ||
-          img.id === targetImageId ||
-          (img.groupId && draggedGroupIds.has(img.groupId));
-        return shouldGroup ? { ...img, groupId: targetGroupId } : img;
-      });
-
-      const selectedIds = newImages
-        .filter((img) => img.groupId === targetGroupId)
-        .map((img) => img.id);
-
-      const newGroupAnchors = { ...state.groupAnchors };
-
-      for (const oldGroupId of draggedGroupIds) {
-        if (oldGroupId !== targetGroupId) {
-          delete newGroupAnchors[oldGroupId];
-        }
-      }
-
-      if (!newGroupAnchors[targetGroupId]) {
-        const snapshot = computeGroupAnchorFromImages(newImages, targetGroupId);
-        if (snapshot) {
-          newGroupAnchors[targetGroupId] = snapshot;
-        }
-      }
-
-      saveToStorage(newImages, selectedIds, newGroupAnchors);
-      return {
-        images: newImages,
-        selectedImageIds: selectedIds,
-        groupAnchors: newGroupAnchors,
-        future: [],
-      };
-    });
-  },
-
-  updateGroupAnchor: (groupId, x, y, options = {}) => {
-    const { persist = true } = options;
-    set((state) => {
-      if (!state.groupAnchors[groupId]) return state;
-
-      const newGroupAnchors = {
-        ...state.groupAnchors,
-        [groupId]: { x, y },
-      };
-      if (persist) {
-        saveToStorage(state.images, state.selectedImageIds, newGroupAnchors);
-      }
-      return { groupAnchors: newGroupAnchors };
-    });
-  },
-
-  ungroupImages: (groupId) => {
-    set((state) => {
-      const newImages = state.images.map((img) =>
-        img.groupId === groupId ? { ...img, groupId: undefined } : img,
-      );
-      const newGroupAnchors = { ...state.groupAnchors };
-      delete newGroupAnchors[groupId];
-      saveToStorage(newImages, state.selectedImageIds, newGroupAnchors);
-      return {
-        images: newImages,
-        groupAnchors: newGroupAnchors,
         future: [],
       };
     });
@@ -476,7 +300,7 @@ export const useBoardStore = create((set) => ({
         (img) => !imageIds.includes(img.id),
       );
       const newImages = [...otherImages, ...frontImages];
-      saveToStorage(newImages, state.selectedImageIds, state.groupAnchors);
+      saveToStorage(newImages, state.selectedImageIds);
       return {
         images: newImages,
         future: [],
@@ -493,7 +317,7 @@ export const useBoardStore = create((set) => ({
         (img) => !imageIds.includes(img.id),
       );
       const newImages = [...backImages, ...otherImages];
-      saveToStorage(newImages, state.selectedImageIds, state.groupAnchors);
+      saveToStorage(newImages, state.selectedImageIds);
       return {
         images: newImages,
         future: [],
@@ -506,7 +330,7 @@ export const useBoardStore = create((set) => ({
       const newImages = state.images.map((img) =>
         imageIds.includes(img.id) ? { ...img, flipH: !img.flipH } : img,
       );
-      saveToStorage(newImages, state.selectedImageIds, state.groupAnchors);
+      saveToStorage(newImages, state.selectedImageIds);
       return {
         images: newImages,
         future: [],
@@ -519,7 +343,7 @@ export const useBoardStore = create((set) => ({
       const newImages = state.images.map((img) =>
         imageIds.includes(img.id) ? { ...img, flipV: !img.flipV } : img,
       );
-      saveToStorage(newImages, state.selectedImageIds, state.groupAnchors);
+      saveToStorage(newImages, state.selectedImageIds);
       return {
         images: newImages,
         future: [],
@@ -538,7 +362,7 @@ export const useBoardStore = create((set) => ({
             }
           : img,
       );
-      saveToStorage(newImages, state.selectedImageIds, state.groupAnchors);
+      saveToStorage(newImages, state.selectedImageIds);
       return {
         images: newImages,
         future: [],
@@ -557,21 +381,14 @@ export const useBoardStore = create((set) => ({
         throw new Error("Format de fichier invalide");
       }
 
-      const images = importedData.images || [];
+      const images = stripGroupFields(importedData.images || []);
       const selectedImageIds = importedData.selectedImageIds || [];
-      const rawAnchors =
-        importedData.groupAnchors || importedData.groupBounds || {};
-      const groupAnchors = migrateGroupAnchors(
-        images,
-        normalizeAnchorsFromRaw(rawAnchors),
-      );
 
-      saveToStorage(images, selectedImageIds, groupAnchors);
+      saveToStorage(images, selectedImageIds);
 
       return {
         images,
         selectedImageIds,
-        groupAnchors,
         history: [],
         future: [],
       };
@@ -584,7 +401,6 @@ export const useBoardStore = create((set) => ({
       return {
         images: [],
         selectedImageIds: [],
-        groupAnchors: {},
         history: [],
         future: [],
       };
